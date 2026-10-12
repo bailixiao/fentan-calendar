@@ -1,0 +1,16 @@
+# Cloudflare Worker 設定。部署：cd worker && npx wrangler deploy
+# 管理密碼：npx wrangler secret put ADMIN_PASSWORD（由管理者自己輸入，不寫進程式碼）
+name = "fentan-calendar-api"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+
+[[durable_objects.bindings]]
+name = "STORE"
+class_name = "CalendarStore"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["CalendarStore"]
+
+[observability]
+enabled = true

@@ -1,0 +1,8 @@
+{
+  "name": "fentan-calendar",
+  "private": true,
+  "scripts": {
+    "test": "node --test",
+    "dev": "node tools/dev-server.js --mock"
+  }
+}
