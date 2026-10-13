@@ -71,15 +71,15 @@ const BOX = `
 
 // 每一張：{ name, hash, js（打開後在頁面裡做的事）, clip（回傳截圖範圍） }
 const SHOTS = [
-  { name: 'filter', hash: '#/', js: `
-      const s = document.getElementById('unit-filter'); s.value = '教真區'; s.dispatchEvent(new Event('change')); await __wait(500);`,
-    clip: `return __box('#unit-bar', '#fc');` },
   { name: 'month', hash: '#/', js: `
-      const s = document.getElementById('unit-filter'); s.value = '教真區'; s.dispatchEvent(new Event('change'));
       document.querySelector('[data-view=month]').click(); await __wait(500);`,
-    tap: () => 'document.querySelector(".fc-daygrid-day .cell-dots").closest(".fc-daygrid-day")',
+    tap: () => '[...document.querySelectorAll(".fc-daygrid-day")].find((c) => c.querySelector(".cell-dots") && c.dataset.date >= "' + new Date(Date.now() + 8 * 3600e3 + 11 * 86400e3).toISOString().slice(0, 10) + '")',
     clip: `return __box('#fc', '#day-panel');` },
-  { name: 'detail', hash: '#/event/jq-D-demo5', js: `await __wait(600);`, clip: `return __box('.detail-head', '.detail-actions');` },
+  { name: 'linked', hash: '#/', js: `
+      document.querySelector('[data-view=recent]').click(); await __wait(800);
+      const a = [...document.querySelectorAll('#week a.ev-card')].find((x) => x.querySelector('.card-title').textContent === '統班');
+      location.hash = a.getAttribute('href'); await __wait(1500);`,
+    clip: `return __box('#view-event .detail-head', '#linked-box');` },
   { name: 'admin-list', hash: '#/admin', js: `
       if (!document.querySelector('.admin-row')) {
         const f = document.querySelector('.admin-login'); f.password.value = 'test-pass'; f.requestSubmit(); await __wait(800);
@@ -101,10 +101,8 @@ const SHOTS = [
       dt.items.add(new File([JSON.stringify({ title: '十一月各區活動（範例）', events })], 'example.json', { type: 'application/json' }));
       input.files = dt.files; input.dispatchEvent(new Event('change')); await __wait(800);`,
     clip: `await __wait(800); scrollTo({ top: 0, behavior: 'instant' }); return __box('.admin-sub', '.imp-list');` },
-  { name: 'signups', hash: '#/signups', js: `await __wait(1200);`, clip: `return __box('#view-signups .admin-title', '#view-signups .sg-day:nth-of-type(1)');` },
   { name: 'push', hash: '#/', js: `
       window.__pushDemo = true;
-      const s = document.getElementById('unit-filter'); s.value = '教真區'; s.dispatchEvent(new Event('change'));
       document.getElementById('push-open').click(); await __wait(500);`,
     clip: `return __box('#push-open', '#push-panel');` },
   { name: 'admin-push', hash: '#/admin/push', js: `

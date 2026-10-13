@@ -123,9 +123,9 @@
   window.Api = {
     ApiError,
     getEvents: (from, to, fresh) => get('getEvents', Object.assign({ from, to }, fresh ? { fresh: '1' } : {})),
-    // 各區報名連動（目前是教全區）：狀態與名單
-    getSignups: (test) => get('getSignups', test ? { test: '1' } : {}),
-    getRoster: (id) => get('getRoster', { id }),
+    // 分壇行事曆畫面：只有分壇的活動，各區的勤務掛在下面（規格第 9-3 節）
+    getCalendar: (from, to, fresh, test) => get('getCalendar', Object.assign({ from, to }, fresh ? { fresh: '1' } : {}, test ? { test: '1' } : {})),
+    getLinked: (id, date, test) => get('getLinked', Object.assign({ id, date }, test ? { test: '1' } : {})),
     // 手機提醒：只送推播網址和單位，沒有名字
     pushKey: () => get('pushKey', {}),
     pushSubscribe: (endpoint, unit) => post({ action: 'pushSubscribe', endpoint, unit }),

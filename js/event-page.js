@@ -1,5 +1,5 @@
-// 活動詳情（#/event/<id>?date=yyyy-MM-dd）：單位、類別、日期（含農曆）、時間、地點、說明、相關連結。
-// 教全區的活動有大按鈕「到教全區報名」，另開教全區的報名頁。
+// 活動詳情（#/event/<id>?date=yyyy-MM-dd，規格第 9、9-3 節）：類別、日期（含農曆）、時間、地點、說明、相關連結，
+// 下面是「各區報名」：派給各區的勤務，每一筆一段：區、名稱、那天的狀態、報了誰（只有名字）。
 (function () {
   'use strict';
 
@@ -25,78 +25,75 @@
     return Fmt.timeRange(ev);
   }
 
-  function noteHtml(text) {
-    return Fmt.esc(text).replace(/\n/g, '<br>');
+  function linksOn(ev, date) {
+    return (ev.links || []).filter((l) => l.start <= date && l.end >= date);
   }
 
   function html(ev, date) {
-    const jq = ev.source === 'jiaoquan';
-    const jqDate = date && date >= ev.start && date <= ev.end ? date : ev.start;
-    const jqUrl = jq ? `${ev.link}?date=${jqDate}` : '';
-    const action = jq
-      ? `<a class="btn btn-primary btn-block btn-go" href="${Fmt.esc(jqUrl)}" target="_blank" rel="noopener">${ev.mode === '公告型' ? '到教全區看詳情' : '到教全區報名'} ↗</a>
-         <p class="hint">報名、取消、改期都在教全區的系統裡做。</p>`
-      : '';
-    const link = !jq && ev.link
-      ? `<a class="btn btn-block btn-go" href="${Fmt.esc(ev.link)}" target="_blank" rel="noopener">打開相關連結 ↗</a>`
-      : '';
+    const hasLinks = linksOn(ev, date).length > 0;
     return `
       <div class="detail-head">
-        ${Fmt.tagsHtml(ev)}
+        <span class="tags"><span class="cat-tag cat-${Fmt.esc(ev.category)}">${Fmt.esc(Fmt.catLabel(ev.category))}</span></span>
         <h1 class="detail-title">${Fmt.esc(ev.name)}</h1>
       </div>
       <dl class="detail-info">
         ${row('日期', dateText(ev, date))}
         ${row('時間', Fmt.esc(timeText(ev)))}
-        ${ev.status && ev.status[date] ? row('報名', Fmt.statusBadge(ev.status[date])) : ''}
         ${row('地點', Fmt.esc(ev.location))}
-        ${row('服裝', Fmt.esc(ev.attire))}
-        ${row('單位', Fmt.esc(ev.unit))}
       </dl>
-      ${ev.note ? `<section class="detail-section"><h2>說明</h2><p class="detail-desc">${noteHtml(ev.note)}</p></section>` : ''}
-      ${jq && ev.mode !== '公告型' ? '<section class="detail-section"><h2>報名名單</h2><div id="roster-box"><p class="panel-empty">載入中⋯</p></div></section>' : ''}
-      <div class="detail-actions">${action}${link}</div>
-      ${jq ? '<p class="hint">這筆活動是從教全區的行事曆自動讀進來的。</p>' : ''}
+      ${ev.note ? `<section class="detail-section"><h2>說明</h2><p class="detail-desc">${Fmt.esc(ev.note).replace(/\n/g, '<br>')}</p></section>` : ''}
+      ${hasLinks ? `<section class="detail-section"><h2>各區報名<span class="h2-sub">${Fmt.esc(Fmt.shortDate(date))}</span></h2><div id="linked-box"><p class="panel-empty">載入中⋯</p></div></section>` : ''}
+      ${ev.link ? `<div class="detail-actions"><a class="btn btn-block btn-go" href="${Fmt.esc(ev.link)}" target="_blank" rel="noopener">打開相關連結 ↗</a></div>` : ''}
       <a class="btn btn-block back-btn" href="#/">‹ 回行事曆</a>`;
   }
 
-  /** 教全區的活動：讀名單（這一天放最上面，多天的其他日子收在下面） */
-  async function loadRoster(view, ev, date, t) {
-    const box = view.querySelector('#roster-box');
+  /** 各區報名：每一筆派給區的勤務一段 */
+  function linkedHtml(links) {
+    return links.map((l) => {
+      let body;
+      if (!l.open) body = '<p class="muted">這一區還沒有開放報名系統</p>';
+      else if (l.error) body = `<p class="muted">${Fmt.esc(l.error)}</p>`;
+      else if (!l.day) body = '<p class="muted">這天沒有報名資料</p>';
+      else body = Fmt.rosterHtml(l.day);
+      return `
+        <article class="linked-item">
+          <div class="linked-head">
+            <span><span class="unit-tag">${Fmt.esc(l.unit)}</span> <strong>${Fmt.esc(l.name)}</strong></span>
+            ${l.day && l.day.status ? Fmt.statusBadge(l.day.status) : ''}
+          </div>
+          ${body}
+          ${l.open && l.link ? `<a class="link-btn" href="${Fmt.esc(l.link)}" target="_blank" rel="noopener">${l.source === 'jiaoquan' ? '到教全區看' : '到該區的報名頁'} ↗</a>` : ''}
+        </article>`;
+    }).join('') + '<p class="hint">各區在各區自己的報名系統報名，這裡自動更新（約 2 分鐘）。</p>';
+  }
+
+  async function loadLinked(view, ev, date, t) {
+    const box = view.querySelector('#linked-box');
     if (!box) return;
     try {
-      const r = await Api.getRoster(ev.id);
+      const r = await Api.getLinked(ev.id, date, CalendarPage.test());
       if (t !== token) return;
-      const day = r.days.find((d) => d.date === date) || r.days[0];
-      if (!day) { box.innerHTML = '<p class="panel-empty">還沒有報名資料</p>'; return; }
-      const others = r.days.filter((d) => d !== day);
-      const dayHead = (d) => `<p class="roster-day"><strong>${Fmt.esc(Fmt.shortDate(d.date))}</strong>${Fmt.statusBadge(d.status)}</p>`;
-      box.innerHTML = dayHead(day) + Fmt.rosterHtml(day) +
-        (others.length ? `<details class="roster-more"><summary>其他 ${others.length} 天的名單</summary>${others.map((d) => dayHead(d) + Fmt.rosterHtml(d)).join('')}</details>` : '') +
-        '<p class="hint">名單從教全區的系統自動讀進來（約 2 分鐘更新一次）。</p>';
+      box.innerHTML = linkedHtml(r.links);
     } catch (err) {
       if (t !== token) return;
-      box.innerHTML = `<p class="panel-empty">${Fmt.esc(err.message || '名單暫時讀不到')}</p>`;
+      box.innerHTML = `<p class="panel-empty">${Fmt.esc(err.message || '暫時讀不到')}</p>`;
     }
   }
 
   async function show(view, id, date) {
     const t = ++token;
+    const render = (ev) => {
+      const d = date && date >= ev.start && date <= ev.end ? date : ev.start;
+      view.innerHTML = html(ev, d);
+      loadLinked(view, ev, d, t);
+    };
     const ev = CalendarPage.findEvent(id);
-    if (ev) {
-      view.innerHTML = html(ev, date);
-      loadRoster(view, ev, date, t);
-      return;
-    }
+    if (ev) { render(ev); return; }
     view.innerHTML = '<p class="panel-empty">載入中⋯</p>';
     try {
       const found = await CalendarPage.fetchEvent(id, date);
       if (t !== token) return;
-      if (found) {
-        view.innerHTML = html(found, date);
-        loadRoster(view, found, date, t);
-        return;
-      }
+      if (found) { render(found); return; }
       view.innerHTML = '<div class="notice notice-error"><p>找不到這個活動，可能已經取消或改了日期。</p></div><a class="btn btn-block back-btn" href="#/">‹ 回行事曆</a>';
     } catch (err) {
       if (t !== token) return;

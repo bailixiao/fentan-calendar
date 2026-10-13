@@ -730,3 +730,13 @@ select.input { appearance: auto; }
 .sg-item.kind-full { border-left-color: #8a8479; }
 .sg-item.kind-notice { border-left-color: #3f5b7d; }
 .sg-head { display: flex; align-items: center; gap: 10px; color: inherit; text-decoration: none; }
+
+/* ---------- 分壇活動掛各區報名（規格第 9-3 節） ---------- */
+
+.top-btns { grid-template-columns: 1fr; }
+.card-links { font-size: .88rem; color: var(--ink-2); }
+.linked-item { margin: 0 0 10px; padding: 10px 14px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); }
+.linked-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; }
+.linked-item .roster { margin-top: 8px; }
+.linked-item .link-btn { margin-top: 8px; }
+.detail-section h2 .h2-sub { margin-left: 10px; font-family: var(--sans); font-size: .95rem; font-weight: 500; color: var(--accent); }

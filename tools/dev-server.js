@@ -69,7 +69,24 @@ async function startMock() {
   const { createStoreApp } = await import('../worker/src/store-app.js');
   const { createMemoryStore } = await import('../worker/src/store.js');
   // 假的對外連線：教全區給假資料；推播不真的送（只印出來）
+  // 假的各區報名系統：只有教慈區開放；分壇派給教慈區的勤務，報名的是假名
+  const regionFake = async (q) => {
+    const snap = (await storeApp.call({ action: 'snapshot' })).data.events;
+    const mine = snap.filter((e) => e.unit === '教慈區' && e.kind === '分壇分配');
+    const daysOf = (e) => [{ date: e.start, status: { kind: 'short', label: '缺 13 人' }, positions: [{ id: 'P', name: (e.positions[0] || { name: '參加' }).name, count: 2, people: [{ name: '王小明' }, { name: '測試甲' }] }] }];
+    if (q.get('action') === 'regions') return { ok: true, data: { regions: [{ name: '教慈區', status: '開放' }] } };
+    if (q.get('action') === 'feed') return { ok: true, data: { regions: [{ region: '教慈區', events: mine.map((e) => ({ id: 'F-' + e.id, name: e.name, category: e.category, mode: '報名型', start: e.start, end: e.end, days: daysOf(e) })) }] } };
+    if (q.get('action') === 'getEvent') {
+      const e = q.get('region') === '教慈區' && mine.find((x) => 'F-' + x.id === q.get('id'));
+      return e ? { ok: true, data: { event: {}, days: daysOf(e) } } : { ok: false, error: { code: 'NOT_FOUND', message: '還沒有開設' } };
+    }
+    return { ok: false, error: { code: 'BAD_REQUEST', message: '假的各區報名系統不支援' } };
+  };
   const fakeFetch = async (url) => {
+    if (url.startsWith('https://region-signup-api')) {
+      const body = await regionFake(new URL(url).searchParams);
+      return { ok: true, status: 200, json: async () => body };
+    }
     if (url.startsWith('https://duty-calendar-api')) {
       const q = new URL(url).searchParams;
       const all = fakeJiaoquan(Number(day(0).slice(0, 4))).data.duties.concat(fakeJiaoquan(Number(day(0).slice(0, 4)) + 1).data.duties);
@@ -97,13 +114,18 @@ async function startMock() {
   // 示範活動
   const token = (await storeApp.call({ action: 'adminLogin', password: 'test-pass' })).data.token;
   const demo = [
+    { unit: '分壇', category: '道務', name: '統班', start: day(11), startTime: '08:00', location: '彌勒山', note: '由人才團負責。' },
+    { unit: '教慈區', category: '勤務', name: '烹飪：統班', start: day(11), location: '彌勒山', positions: [{ name: '烹飪', min: 15 }] },
+    { unit: '教真區', category: '勤務', name: '志工團：統班', start: day(11), location: '彌勒山' },
+    { unit: '教力區', category: '道務', name: '宏宗獻供拜香（大典）', start: day(12), location: '宏宗' },
+    { unit: '教發區', category: '道務', name: '宏宗獻供拜香（大典）', start: day(12), location: '宏宗' },
     { unit: '分壇', category: '道務', name: '分壇法會', start: day(1), startTime: '09:00', endTime: '12:00', location: '分壇佛堂', note: '歡迎各區家人一起參加。\n請穿道服。' },
     { unit: '分壇', category: '勤務', name: '分壇大型勤務：場地布置', start: day(8), end: day(9), startTime: '08:00', endTime: '17:00', location: '分壇佛堂' },
     { unit: '分壇', category: '教育', name: '分壇講師研習', start: day(15), startTime: '19:30', endTime: '21:30', location: '分壇教室', link: 'https://example.com/' },
-    { unit: '教真區', category: '道務', name: '教真區研究班', start: day(1), startTime: '19:30', location: '教真區佛堂' },
-    { unit: '教善區', category: '教育', name: '教善區讀經班', start: day(4), startTime: '10:00', endTime: '11:30', location: '教善區中心' },
-    { unit: '教慈區', category: '勤務', name: '教慈區打掃', start: day(6), startTime: '08:00', location: '教慈區佛堂' },
-    { unit: '教理區', category: '道務', name: '教理區法會', start: day(12), startTime: '09:00', location: '教理區佛堂' }
+    { unit: '教真區', kind: '區活動', category: '道務', name: '教真區研究班', start: day(1), startTime: '19:30', location: '教真區佛堂' },
+    { unit: '教善區', kind: '區活動', category: '教育', name: '教善區讀經班', start: day(4), startTime: '10:00', endTime: '11:30', location: '教善區中心' },
+    { unit: '教慈區', kind: '區活動', category: '勤務', name: '教慈區打掃', start: day(6), startTime: '08:00', location: '教慈區佛堂' },
+    { unit: '教理區', kind: '區活動', category: '道務', name: '教理區法會', start: day(12), startTime: '09:00', location: '教理區佛堂' }
   ];
   for (const ev of demo) await storeApp.call({ action: 'adminSave', token, event: ev });
   await storeApp.call({ action: 'adminLogout', token });

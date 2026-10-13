@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/app.css?v=20261013m">
+  <link rel="stylesheet" href="css/app.css?v=20261013p">
   <script>try { var t = localStorage.getItem('fentan-calendar:text-size'); if (t === 'l' || t === 'xl') document.documentElement.classList.add('text-' + t); } catch (e) {}</script>
 </head>
 <body>
@@ -43,18 +43,8 @@
         </div>
       </div>
 
-      <div class="unit-bar" id="unit-bar">
-        <label class="unit-pick">
-          <span class="unit-label">看哪個單位</span>
-          <select id="unit-filter" class="input"></select>
-        </label>
-        <label class="unit-with" id="with-fentan-box" hidden>
-          <input type="checkbox" id="with-fentan"> 也顯示分壇的活動
-        </label>
-      </div>
 
       <div class="top-btns">
-        <a class="btn signups-link" href="#/signups">📊 報名統計</a>
         <button type="button" class="btn push-open" id="push-open" aria-expanded="false" aria-controls="push-panel">🔔 手機提醒</button>
       </div>
       <section id="push-panel" class="push-panel" hidden aria-label="手機提醒">
@@ -63,7 +53,6 @@
       </section>
 
       <div id="cal-status" class="status" role="status" hidden></div>
-      <p id="source-status" class="status status-warn" role="status" hidden></p>
 
       <button type="button" id="past-toggle" class="btn past-toggle" hidden></button>
       <div id="fc" class="calendar"></div>
@@ -73,7 +62,6 @@
         <li><i class="dot dot-勤務"></i>總務・勤務</li>
         <li><i class="dot dot-道務"></i>道務</li>
         <li><i class="dot dot-教育"></i>教育</li>
-        <li><i class="dot dot-勤務 dot-fentan"></i>金框＝分壇的活動</li>
       </ul>
 
       <section id="day-panel" class="day-panel" aria-live="polite"></section>
@@ -84,7 +72,6 @@
     <section id="view-event" class="detail-view" hidden></section>
     <section id="view-help" class="help-view" hidden></section>
     <section id="view-admin" class="admin-view" hidden></section>
-    <section id="view-signups" class="signups-view" hidden></section>
   </main>
 
   <footer class="app-footer"><a href="#/admin">管理者</a></footer>
@@ -100,17 +87,16 @@
   <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.21/index.global.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@fullcalendar/core@6.1.21/locales/zh-tw.global.min.js"></script>
   <!-- 改了 js、css 後把 ?v= 的日期換新，手機才不會用到舊的檔案（GitHub Pages 會快取 10 分鐘） -->
-  <script src="js/site.js?v=20261013m"></script>
-  <script src="js/config.js?v=20261013m"></script>
-  <script src="js/api.js?v=20261013m"></script>
-  <script src="js/format.js?v=20261013m"></script>
-  <script src="js/lunar-util.js?v=20261013m"></script>
-  <script src="js/calendar.js?v=20261013m"></script>
-  <script src="js/event-page.js?v=20261013m"></script>
-  <script src="js/help.js?v=20261013m"></script>
-  <script src="js/signups.js?v=20261013m"></script>
-  <script src="js/push.js?v=20261013m"></script>
-  <script src="js/admin.js?v=20261013m"></script>
-  <script src="js/app.js?v=20261013m"></script>
+  <script src="js/site.js?v=20261013p"></script>
+  <script src="js/config.js?v=20261013p"></script>
+  <script src="js/api.js?v=20261013p"></script>
+  <script src="js/format.js?v=20261013p"></script>
+  <script src="js/lunar-util.js?v=20261013p"></script>
+  <script src="js/calendar.js?v=20261013p"></script>
+  <script src="js/event-page.js?v=20261013p"></script>
+  <script src="js/help.js?v=20261013p"></script>
+  <script src="js/push.js?v=20261013p"></script>
+  <script src="js/admin.js?v=20261013p"></script>
+  <script src="js/app.js?v=20261013p"></script>
 </body>
 </html>

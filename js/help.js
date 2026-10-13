@@ -5,14 +5,8 @@
   // img：img/help 的截圖（tools/help-shots.js 產生），截圖裡只有假資料
   const ITEMS = [
     { cat: '看行事曆', q: '這個行事曆是什麼？', a: `
-      <p>宏教分壇和底下 16 區的活動，都放在這一個行事曆上，打開就能看到最近有什麼法會、課程、勤務。</p>
-      <p>不用登入，也不用填任何資料。</p>` },
-    { cat: '看行事曆', q: '怎麼只看我們區的活動？', img: 'filter.png', a: `
-      <ol class="help-steps">
-        <li><span class="help-num">1</span><span>行事曆上方「看哪個單位」選您的區，例如「教真區」。</span></li>
-        <li><span class="help-num">2</span><span>下面的「也顯示分壇的活動」預設有勾，分壇的大活動也會一起出現。不想看分壇的就把勾拿掉。</span></li>
-      </ol>
-      <p>這支手機會記住您選的，下次打開還是同一區。</p>` },
+      <p>宏教分壇的活動都放在這個行事曆上：分壇的法會、班、會議，還有分壇派給各區的勤務（例如統班烹飪、宏宗獻供拜香）。</p>
+      <p>不用登入，也不用填任何資料。各區自己的活動請看各區的報名系統。</p>` },
     { cat: '看行事曆', q: '年、月、週、近期有什麼不同？', img: 'month.png', a: `
       <ul class="help-bullets">
         <li><strong>月</strong>：一個月的格子，有活動的日子有色點；點日期，下面會列出那天的活動。</li>
@@ -23,33 +17,26 @@
     { cat: '看行事曆', q: '色點和標籤是什麼意思？', a: `
       <ul class="help-bullets">
         <li>色點顏色是類別：<span class="cat-tag cat-勤務">總務・勤務</span><span class="cat-tag cat-道務">道務</span><span class="cat-tag cat-教育">教育</span>。</li>
-        <li>外面有一圈<strong>金框</strong>的是<strong>分壇</strong>的活動。</li>
-        <li>卡片上方的小標籤寫是哪個單位（<span class="unit-tag is-fentan">分壇</span>或<span class="unit-tag">某一區</span>）和類別。</li>
+        <li>卡片下面的「派給：教慈區・烹飪、教全區・志工團」是這個活動分壇派給哪幾區、做什麼。</li>
+        <li>右邊的<span class="badge badge-ok">各區已報 5 人</span>是各區加起來報了幾個人。</li>
       </ul>` },
-    { cat: '看行事曆', q: '點活動可以看到什麼？', img: 'detail.png', a: `
-      <p>日期（含農曆）、時間、地點、說明。教全區的活動會有「到教全區報名」的大按鈕。</p>` },
-    { cat: '報名', q: '怎麼看各區報名了誰、還缺幾人？', img: 'signups.png', a: `
-      <p>行事曆上方按「📊 報名統計」：最上面是今天起 30 天的總數（幾個活動、共幾人次、幾項缺人），下面依日期列出每個活動的狀態和名單，缺人的排在前面。</p>
+    { cat: '報名', q: '怎麼看各區報了誰？', img: 'linked.png', a: `
+      <p>點活動，下面的「<strong>各區報名</strong>」會列出派給哪幾區、各區報了誰（只有名字），和那天的狀態：</p>
       <ul class="help-bullets">
         <li><span class="badge badge-short">缺 2 人</span>：還需要人手（勤務才算缺人）。</li>
-        <li><span class="badge badge-ok">已報 5 人</span>：自由參加的活動（道務、教育），或不限名額的勤務。</li>
+        <li><span class="badge badge-ok">已報 5 人</span>：自由參加，或不限名額。</li>
         <li><span class="badge badge-full">額滿</span>：名額滿了。</li>
       </ul>
-      <p>各區在各區自己的系統報名，這裡自動彙整，不用另外回報。目前只有<strong>教全區</strong>有報名系統，其他區有了之後會自動出現。點活動也看得到那一天的名單。</p>` },
+      <p>各區在各區自己的報名系統報名，這裡大約 2 分鐘內自動更新，不用另外回報。還沒開放報名系統的區會寫「這一區還沒有開放報名系統」。</p>` },
     { cat: '報名', q: '怎麼報名？', a: `
-      <p>這個行事曆<strong>只能看，不能報名</strong>。</p>
-      <ul class="help-bullets">
-        <li><strong>教全區</strong>的活動：點進去按「到教全區報名」，會打開教全區的報名頁，在那裡報名、取消、改期。</li>
-        <li>其他區、分壇的活動：請照各區、分壇原本的方式報名，或問各區的負責人。</li>
-      </ul>` },
+      <p>這個行事曆<strong>只能看，不能報名</strong>。請在您的區的報名系統報名（教全區用教全區行事曆），報了以後分壇這裡就看得到。</p>
+      <p>在「各區報名」裡按「到該區的報名頁」，可以直接打開那一區的報名頁。</p>` },
     { cat: '看行事曆', q: '活動資料從哪裡來？多久更新？', a: `
       <ul class="help-bullets">
-        <li><strong>教全區</strong>：自動從教全區的行事曆讀進來，大約 5 分鐘內會跟上。</li>
-        <li><strong>分壇和其他區</strong>：由管理者輸入，存檔後大約 1 分鐘內大家都看得到。</li>
+        <li><strong>分壇的活動、派給各區的勤務</strong>：由分壇管理者輸入，存檔後大約 1 分鐘內大家都看得到。</li>
+        <li><strong>各區報了誰</strong>：從各區的報名系統（教全區從教全區行事曆）自動讀進來，大約 2～5 分鐘跟上。</li>
       </ul>
       <p>打開網站時會先顯示上次的資料，同時在背景更新；上方出現「更新中⋯」就是正在拿最新的。</p>` },
-    { cat: '看行事曆', q: '畫面說「教全區的活動暫時讀不到」？', a: `
-      <p>教全區的系統暫時連不上，其他活動照常顯示。稍後會自動再試，不用做任何事。</p>` },
     { cat: '手機', q: '怎麼加到手機主畫面，像 App 一樣打開？', a: `
       <p><strong>iPhone（Safari）</strong></p>
       <ol class="help-steps">

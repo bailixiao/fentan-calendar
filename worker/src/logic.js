@@ -227,7 +227,7 @@ export function fromJiaoquan(data) {
       attire: str(d.attire).slice(0, 60),
       note: '',
       link: SITE.jiaoquan.site + '#/duty/' + encodeURIComponent(d.id),
-      status: Object.keys(d.days && typeof d.days === 'object' ? d.days : {}).filter(isDate).reduce((o, date) => { o[date] = dayStatus(d, d.days[date]); return o; }, {})
+      status: Object.keys(d.days && typeof d.days === 'object' ? d.days : {}).filter(isDate).reduce((o, date) => { o[date] = Object.assign(dayStatus(d, d.days[date]), { total: Number(d.days[date] && d.days[date].total) || 0 }); return o; }, {})
     });
   });
   return out;
@@ -252,4 +252,62 @@ export function yearsOf(from, to) {
   const out = [];
   for (let y = Number(from.slice(0, 4)); y <= Number(to.slice(0, 4)); y++) out.push(y);
   return out;
+}
+
+// ---------- 分壇行事曆只看分壇的活動，各區的勤務掛在下面（規格第 9-3 節） ----------
+
+/** 比對用的名字：去掉括號裡的字、「第 N 次」、標點空白；分壇活動取「：」前面那段 */
+function coreName(name) {
+  return String(name || '').replace(/（[^）]*）|\([^)]*\)/g, '').replace(/第\s*\d+\s*次\s*$/, '').replace(/[\s:：・、,，]/g, '');
+}
+function parentKey(name) {
+  return coreName(String(name || '').split(/[：:]/)[0]);
+}
+
+/** 掛著的各區勤務：照區的順序（教真區⋯教理區），同一區分壇分配的在前、教全區系統的在後 */
+function sortLinks(list) {
+  const order = (u) => { const i = SITE.units.indexOf(u); return i === -1 ? 99 : i; };
+  return list.sort((a, b) => order(a.unit) - order(b.unit) || (a.source === 'jiaoquan') - (b.source === 'jiaoquan'));
+}
+
+function linkOf(e) {
+  return { id: e.id, unit: e.unit, name: e.name, source: e.source === 'jiaoquan' ? 'jiaoquan' : 'local', start: e.start, end: e.end };
+}
+
+/**
+ * 分壇行事曆的項目：
+ *   1. 單位是分壇的活動，links＝掛在下面的各區勤務（分壇分配、教全區系統的）：日期重疊且名稱含分壇活動的名字。
+ *   2. 沒掛上的分壇分配勤務：同名稱、同日期的合成一張卡片（代號 G- 開頭）。
+ * 區活動、各區自己的活動、沒掛上的教全區活動都不出現；測試區只有 test 才出現。
+ */
+export function buildCalendar(events, test) {
+  const overlap = (a, b) => a.start <= b.end && a.end >= b.start;
+  const fentan = events.filter((e) => e.source === 'local' && e.unit === SITE.fentan);
+  const assigned = events.filter((e) => e.source === 'local' && e.unit !== SITE.fentan && e.kind !== '區活動' && (test || e.unit !== SITE.testRegion));
+  const jq = events.filter((e) => e.source === 'jiaoquan');
+  const used = new Set();
+  const items = fentan.map((f) => {
+    const key = parentKey(f.name);
+    const links = [];
+    if (key.length >= 2) {
+      assigned.forEach((a) => { if (!used.has(a.id) && overlap(a, f) && coreName(a.name).indexOf(key) !== -1) { links.push(linkOf(a)); used.add(a.id); } });
+      jq.forEach((j) => { if (overlap(j, f) && coreName(j.name).indexOf(key) !== -1) links.push(linkOf(j)); });
+    }
+    return Object.assign({}, f, { links: sortLinks(links) });
+  });
+  const groups = new Map();
+  assigned.filter((a) => !used.has(a.id)).forEach((a) => {
+    const k = [a.name, a.start, a.end].join('|');
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(a);
+  });
+  groups.forEach((list) => {
+    const first = list[0];
+    items.push({
+      id: 'G-' + first.id, source: 'group', unit: SITE.fentan, category: first.category, name: first.name,
+      start: first.start, end: first.end, startTime: first.startTime || '', endTime: first.endTime || '',
+      location: first.location || '', note: first.note || '', link: '', links: sortLinks(list.map(linkOf))
+    });
+  });
+  return items.sort((a, b) => a.start.localeCompare(b.start) || (a.startTime || '').localeCompare(b.startTime || '') || a.name.localeCompare(b.name));
 }

@@ -1,6 +1,6 @@
 // 行事曆首頁（沿用教全區的看法）：年／月檢視用 FullCalendar，週、近期是自製的直向列表。
 // 格子顯示國曆、農曆與色點（顏色依類別；分壇的活動外面多一圈金框）；點日期在下方列出當天活動卡片。
-// 上方的單位篩選：分壇（預設，只看分壇的）／某一區；選某一區時可以勾「也顯示分壇的活動」。沒有「全部」。
+// 只看分壇的活動（規格第 9-3 節）：派給各區的勤務掛在分壇活動下面，卡片寫「派給：區・名稱」，右邊是各區已報幾人。網址加 ?test=1 連測試區。
 (function () {
   'use strict';
 
@@ -19,8 +19,7 @@
     loading: true, // 載入中不顯示舊區間的資料，避免誤判「沒有活動」
     pendingScroll: null, // 年檢視載入完成後要捲到的月份
     showPast: false, // 年檢視是否顯示今年已過的月份（每次開啟預設收起）
-    unit: readKey('unit', window.SITE.fentan), // 分壇／某一區
-    withFentan: readKey('with-fentan', '1') !== '0' // 選某一區時，也顯示分壇的活動
+    test: /[?&]test=1(&|$)/.test(location.search) // 測試模式：連測試區的分壇分配勤務一起
   };
   const windows = new Map(); // 年份 → { data, fresh, promise }
   const dayMap = new Map(); // 'yyyy-MM-dd' → [event]
@@ -40,17 +39,12 @@
     el.week = document.getElementById('week');
     el.title = document.getElementById('cal-title');
     el.status = document.getElementById('cal-status');
-    el.source = document.getElementById('source-status');
     el.panel = document.getElementById('day-panel');
     el.tabs = Array.from(document.querySelectorAll('[data-view]'));
     el.pastToggle = document.getElementById('past-toggle');
     el.nav = ['cal-prev', 'cal-next', 'cal-today'].map((id) => document.getElementById(id));
-    el.unit = document.getElementById('unit-filter');
-    el.withFentan = document.getElementById('with-fentan');
-    el.withFentanBox = document.getElementById('with-fentan-box');
 
     state.view = loadSavedView();
-    initUnitFilter();
 
     calendar = new FullCalendar.Calendar(el.fc, {
       locale: 'zh-tw',
@@ -81,41 +75,6 @@
     });
 
     applyView();
-  }
-
-  // ---------- 單位篩選 ----------
-
-  function initUnitFilter() {
-    const opts = [window.SITE.fentan].concat(window.SITE.units);
-    if (opts.indexOf(state.unit) === -1) state.unit = window.SITE.fentan; // 以前選過「全部」的也改成分壇
-    el.unit.innerHTML = opts.map((u) => `<option value="${Fmt.esc(u)}">${Fmt.esc(u === window.SITE.fentan ? '分壇的活動' : u)}</option>`).join('');
-    el.unit.value = state.unit;
-    el.withFentan.checked = state.withFentan;
-    syncWithFentanBox();
-    el.unit.addEventListener('change', () => {
-      state.unit = el.unit.value;
-      writeKey('unit', state.unit);
-      syncWithFentanBox();
-      rerender();
-    });
-    el.withFentan.addEventListener('change', () => {
-      state.withFentan = el.withFentan.checked;
-      writeKey('with-fentan', state.withFentan ? '1' : '0');
-      rerender();
-    });
-  }
-
-  function syncWithFentanBox() {
-    el.withFentanBox.hidden = state.unit === window.SITE.fentan;
-  }
-
-  function passes(ev) {
-    if (ev.unit === state.unit) return true;
-    return state.unit !== window.SITE.fentan && state.withFentan && ev.unit === window.SITE.fentan;
-  }
-
-  function rerender() {
-    if (state.range) load(state.range.from, state.range.to);
   }
 
   // ---------- 檢視切換與導覽 ----------
@@ -301,7 +260,7 @@
     }
     if (!entry.fresh && !entry.promise) {
       const r = windowRange(year);
-      entry.promise = Api.getEvents(r.from, r.to, fresh).then((data) => {
+      entry.promise = Api.getCalendar(r.from, r.to, fresh, state.test).then((data) => {
         entry.data = data;
         entry.fresh = true;
         if (data.today) state.today = data.today;
@@ -353,17 +312,7 @@
     state.loading = false;
     paintAllCells();
     renderList();
-    renderSourceStatus(data);
     scrollToPendingMonth();
-  }
-
-  /** 教全區的活動讀不到時提示（只有篩選會看到教全區時才提示） */
-  function renderSourceStatus(data) {
-    const jq = window.SITE.jiaoquan.unit;
-    const src = data.sources && data.sources[jq];
-    const relevant = state.unit === jq;
-    el.source.hidden = !(src && !src.ok && relevant);
-    if (!el.source.hidden) el.source.textContent = `${jq}的活動暫時讀不到，稍後會自動再試（其他活動照常顯示）`;
   }
 
   /** 看的日期接近年底或年初時，先在背景載入相鄰年份 */
@@ -378,7 +327,7 @@
 
   function readStored(year) {
     try {
-      const data = JSON.parse(localStorage.getItem(KEY + 'events:' + year) || 'null');
+      const data = JSON.parse(localStorage.getItem(KEY + 'cal:' + (state.test ? 'test:' : '') + year) || 'null');
       return data && Array.isArray(data.events) ? data : null;
     } catch (e) {
       return null;
@@ -387,14 +336,13 @@
 
   function store(year, data) {
     try {
-      localStorage.setItem(KEY + 'events:' + year, JSON.stringify(data));
+      localStorage.setItem(KEY + 'cal:' + (state.test ? 'test:' : '') + year, JSON.stringify(data));
     } catch (e) { /* 無痕模式或空間不足，忽略 */ }
   }
 
   function indexEvents(data, from, to) {
     dayMap.clear();
     data.events.forEach((ev) => {
-      if (!passes(ev)) return;
       const start = ev.start > from ? ev.start : from;
       const end = ev.end < to ? ev.end : to;
       Fmt.datesBetween(start, end).forEach((date) => {
@@ -402,10 +350,8 @@
         dayMap.get(date).push(ev);
       });
     });
-    // 同一天：分壇的排前面，再依時間、名稱
-    const fentan = window.SITE.fentan;
+    // 同一天：依時間、名稱
     dayMap.forEach((list) => list.sort((a, b) =>
-      (a.unit === fentan ? 0 : 1) - (b.unit === fentan ? 0 : 1) ||
       (a.startTime || '').localeCompare(b.startTime || '') ||
       a.name.localeCompare(b.name, 'zh-Hant')));
   }
@@ -448,7 +394,7 @@
   }
 
   function dotClass(ev) {
-    return `dot dot-${ev.category}${ev.unit === window.SITE.fentan ? ' dot-fentan' : ''}`;
+    return `dot dot-${ev.category}`;
   }
 
   function paintCell(cell, date) {
@@ -494,17 +440,42 @@
 
   // ---------- 活動卡片 ----------
 
+  /** 那一天掛著的各區勤務 */
+  function linksOn(ev, date) {
+    return (ev.links || []).filter((l) => l.start <= date && l.end >= date);
+  }
+
+  /** 「派給：教慈區・烹飪、教全區・志工團」：名稱有分壇活動的名字就省略 */
+  function linksLine(ev, date) {
+    const list = linksOn(ev, date);
+    if (!list.length) return '';
+    const short = (l) => {
+      const n = l.name.split(/[：:]/)[0];
+      return ev.source === 'group' || n === ev.name ? l.unit : `${l.unit}・${n}`;
+    };
+    return `<span class="card-links">派給：${list.map((l) => Fmt.esc(short(l))).join('、')}</span>`;
+  }
+
+  /** 右邊的「各區已報 N 人」：只算有資料的（各區報名系統今天起 60 天、教全區） */
+  function linksBadge(ev, date) {
+    const known = linksOn(ev, date).filter((l) => l.counts && l.counts[date] !== undefined);
+    if (!known.length) return '';
+    const n = known.reduce((a, l) => a + l.counts[date], 0);
+    return `<span class="badge badge-ok">各區已報 ${n} 人</span>`;
+  }
+
   function cardHtml(ev, date, compact) {
     const meta = [Fmt.cardTime(ev, date), ev.location].filter(Boolean);
     const href = `#/event/${encodeURIComponent(ev.id)}?date=${date}`;
     return `
-      <a class="ev-card cat-line-${Fmt.esc(ev.category)}${ev.unit === window.SITE.fentan ? ' is-fentan' : ''}${compact ? ' is-compact' : ''}" href="${href}">
+      <a class="ev-card cat-line-${Fmt.esc(ev.category)}${compact ? ' is-compact' : ''}" href="${href}">
         <span class="card-main">
-          ${Fmt.tagsHtml(ev)}
+          <span class="tags"><span class="cat-tag cat-${Fmt.esc(ev.category)}">${Fmt.esc(Fmt.catLabel(ev.category))}</span></span>
           <span class="card-title">${Fmt.esc(ev.name)}</span>
           ${meta.length ? `<span class="card-meta">${meta.map(Fmt.esc).join('・')}</span>` : ''}
+          ${linksLine(ev, date)}
         </span>
-        ${ev.status ? Fmt.statusBadge(ev.status[date]) : ''}
+        ${linksBadge(ev, date)}
         <span class="card-go" aria-hidden="true">›</span>
       </a>`;
   }
@@ -624,5 +595,5 @@
     return findEvent(id);
   }
 
-  window.CalendarPage = { init, refresh, onShow, findEvent, fetchEvent, today: () => state.today, unit: () => state.unit };
+  window.CalendarPage = { init, refresh, onShow, findEvent, fetchEvent, today: () => state.today, unit: () => window.SITE.fentan, test: () => state.test };
 })();
