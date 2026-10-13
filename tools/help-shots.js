@@ -101,6 +101,7 @@ const SHOTS = [
       dt.items.add(new File([JSON.stringify({ title: '十一月各區活動（範例）', events })], 'example.json', { type: 'application/json' }));
       input.files = dt.files; input.dispatchEvent(new Event('change')); await __wait(800);`,
     clip: `await __wait(800); scrollTo({ top: 0, behavior: 'instant' }); return __box('.admin-sub', '.imp-list');` },
+  { name: 'signups', hash: '#/signups', js: `await __wait(1200);`, clip: `return __box('#view-signups .admin-title', '#view-signups .sg-day:nth-of-type(1)');` },
   { name: 'push', hash: '#/', js: `
       window.__pushDemo = true;
       const s = document.getElementById('unit-filter'); s.value = '教真區'; s.dispatchEvent(new Event('change'));

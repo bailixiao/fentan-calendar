@@ -48,14 +48,36 @@
       <dl class="detail-info">
         ${row('日期', dateText(ev, date))}
         ${row('時間', Fmt.esc(timeText(ev)))}
+        ${ev.status && ev.status[date] ? row('報名', Fmt.statusBadge(ev.status[date])) : ''}
         ${row('地點', Fmt.esc(ev.location))}
         ${row('服裝', Fmt.esc(ev.attire))}
         ${row('單位', Fmt.esc(ev.unit))}
       </dl>
       ${ev.note ? `<section class="detail-section"><h2>說明</h2><p class="detail-desc">${noteHtml(ev.note)}</p></section>` : ''}
+      ${jq && ev.mode !== '公告型' ? '<section class="detail-section"><h2>報名名單</h2><div id="roster-box"><p class="panel-empty">載入中⋯</p></div></section>' : ''}
       <div class="detail-actions">${action}${link}</div>
       ${jq ? '<p class="hint">這筆活動是從教全區的行事曆自動讀進來的。</p>' : ''}
       <a class="btn btn-block back-btn" href="#/">‹ 回行事曆</a>`;
+  }
+
+  /** 教全區的活動：讀名單（這一天放最上面，多天的其他日子收在下面） */
+  async function loadRoster(view, ev, date, t) {
+    const box = view.querySelector('#roster-box');
+    if (!box) return;
+    try {
+      const r = await Api.getRoster(ev.id);
+      if (t !== token) return;
+      const day = r.days.find((d) => d.date === date) || r.days[0];
+      if (!day) { box.innerHTML = '<p class="panel-empty">還沒有報名資料</p>'; return; }
+      const others = r.days.filter((d) => d !== day);
+      const dayHead = (d) => `<p class="roster-day"><strong>${Fmt.esc(Fmt.shortDate(d.date))}</strong>${Fmt.statusBadge(d.status)}</p>`;
+      box.innerHTML = dayHead(day) + Fmt.rosterHtml(day) +
+        (others.length ? `<details class="roster-more"><summary>其他 ${others.length} 天的名單</summary>${others.map((d) => dayHead(d) + Fmt.rosterHtml(d)).join('')}</details>` : '') +
+        '<p class="hint">名單從教全區的系統自動讀進來（約 2 分鐘更新一次）。</p>';
+    } catch (err) {
+      if (t !== token) return;
+      box.innerHTML = `<p class="panel-empty">${Fmt.esc(err.message || '名單暫時讀不到')}</p>`;
+    }
   }
 
   async function show(view, id, date) {
@@ -63,15 +85,19 @@
     const ev = CalendarPage.findEvent(id);
     if (ev) {
       view.innerHTML = html(ev, date);
+      loadRoster(view, ev, date, t);
       return;
     }
     view.innerHTML = '<p class="panel-empty">載入中⋯</p>';
     try {
       const found = await CalendarPage.fetchEvent(id, date);
       if (t !== token) return;
-      view.innerHTML = found
-        ? html(found, date)
-        : '<div class="notice notice-error"><p>找不到這個活動，可能已經取消或改了日期。</p></div><a class="btn btn-block back-btn" href="#/">‹ 回行事曆</a>';
+      if (found) {
+        view.innerHTML = html(found, date);
+        loadRoster(view, found, date, t);
+        return;
+      }
+      view.innerHTML = '<div class="notice notice-error"><p>找不到這個活動，可能已經取消或改了日期。</p></div><a class="btn btn-block back-btn" href="#/">‹ 回行事曆</a>';
     } catch (err) {
       if (t !== token) return;
       view.innerHTML = `<div class="notice notice-error"><p>${Fmt.esc(err.message || '無法載入')}</p></div><a class="btn btn-block back-btn" href="#/">‹ 回行事曆</a>`;

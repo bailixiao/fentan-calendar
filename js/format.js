@@ -96,5 +96,18 @@
       `<span class="cat-tag cat-${esc(ev.category)}">${esc(catLabel(ev.category))}</span></span>`;
   }
 
-  window.Fmt = { esc, toDateStr, parseDate, addDays, datesBetween, rocYear, weekday, shortDate, rocDate, catLabel, timeRange, cardTime, tagsHtml };
+  /** 報名狀態的小標籤（教全區的活動）：缺人紅、額滿灰、人數足綠、公告藍 */
+  function statusBadge(st) {
+    return st ? `<span class="badge badge-${esc(st.kind)}">${esc(st.label)}</span>` : '';
+  }
+
+  /** 一天的名單：每個了愿項目一行「打掃：王小明、測試甲（陪同）」 */
+  function rosterHtml(day) {
+    const rows = day.positions.map((p) => `<li><span class="roster-pos">${esc(p.name)}</span>${p.people.length
+      ? p.people.map((x) => esc(x.name) + (x.accompany ? '<small>（陪同）</small>' : '')).join('、')
+      : '<span class="muted">還沒有人</span>'}</li>`).join('');
+    return rows ? `<ul class="roster">${rows}</ul>` : '';
+  }
+
+  window.Fmt = { statusBadge, rosterHtml, esc, toDateStr, parseDate, addDays, datesBetween, rocYear, weekday, shortDate, rocDate, catLabel, timeRange, cardTime, tagsHtml };
 })();

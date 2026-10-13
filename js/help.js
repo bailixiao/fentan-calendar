@@ -28,6 +28,14 @@
       </ul>` },
     { cat: '看行事曆', q: '點活動可以看到什麼？', img: 'detail.png', a: `
       <p>日期（含農曆）、時間、地點、說明。教全區的活動會有「到教全區報名」的大按鈕。</p>` },
+    { cat: '報名', q: '怎麼看各區報名了誰、還缺幾人？', img: 'signups.png', a: `
+      <p>行事曆上方按「📊 報名統計」：最上面是今天起 30 天的總數（幾個活動、共幾人次、幾項缺人），下面依日期列出每個活動的狀態和名單，缺人的排在前面。</p>
+      <ul class="help-bullets">
+        <li><span class="badge badge-short">缺 2 人</span>：還需要人手（勤務才算缺人）。</li>
+        <li><span class="badge badge-ok">已報 5 人</span>：自由參加的活動（道務、教育），或不限名額的勤務。</li>
+        <li><span class="badge badge-full">額滿</span>：名額滿了。</li>
+      </ul>
+      <p>各區在各區自己的系統報名，這裡自動彙整，不用另外回報。目前只有<strong>教全區</strong>有報名系統，其他區有了之後會自動出現。點活動也看得到那一天的名單。</p>` },
     { cat: '報名', q: '怎麼報名？', a: `
       <p>這個行事曆<strong>只能看，不能報名</strong>。</p>
       <ul class="help-bullets">

@@ -2,7 +2,7 @@
 (function () {
   'use strict';
 
-  const VIEWS = ['calendar', 'event', 'help', 'admin'];
+  const VIEWS = ['calendar', 'event', 'help', 'admin', 'signups'];
   const TEXT_KEY = 'fentan-calendar:text-size';
   const SIZES = ['', 'l', 'xl'];
 
@@ -19,6 +19,12 @@
       showView('event');
       window.scrollTo(0, 0);
       EventPage.show(document.getElementById('view-event'), decodeURIComponent(ev[1]), ev[2]);
+      return;
+    }
+    if (/^#\/signups\/?$/.test(hash)) {
+      showView('signups');
+      window.scrollTo(0, 0);
+      SignupsPage.show(document.getElementById('view-signups'));
       return;
     }
     if (/^#\/help\/?$/.test(hash)) {

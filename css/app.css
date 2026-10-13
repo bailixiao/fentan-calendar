@@ -694,3 +694,39 @@ select.input { appearance: auto; }
 .push-status.is-已送出 { background: #e4ebe1; color: #34513a; }
 .push-status.is-已取消 { opacity: .6; }
 .push-body-text { margin: 4px 0; color: var(--ink-2); }
+
+/* ---------- 報名連動：狀態標籤、名單、報名統計 ---------- */
+
+.top-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 0 0 12px; }
+.top-btns .btn { font-weight: 700; padding: 0 8px; }
+.top-btns .push-open { margin: 0; }
+
+.badge { flex: none; padding: 3px 10px; border-radius: 999px; font-size: .85rem; font-weight: 700; white-space: nowrap; }
+.badge-short { background: var(--accent-soft); color: var(--accent); }
+.badge-full { background: #e9e5dd; color: var(--ink-2); }
+.badge-ok { background: #e4ebe1; color: #34513a; }
+.badge-notice { background: #e2e8f0; color: #3f5b7d; }
+
+.roster { margin: 6px 0 0; padding: 0; list-style: none; display: grid; gap: 4px; }
+.roster li { line-height: 1.6; overflow-wrap: anywhere; }
+.roster-pos { display: inline-block; min-width: 4em; margin-right: 8px; padding: 0 8px; border-radius: 6px; background: var(--paper-2); color: var(--ink-2); font-size: .9rem; font-weight: 700; }
+.roster small { color: var(--muted); }
+.roster-day { display: flex; align-items: center; gap: 10px; margin: 10px 0 0; }
+.roster-more { margin-top: 12px; }
+.roster-more summary { min-height: var(--tap); display: flex; align-items: center; cursor: pointer; color: var(--accent); font-weight: 700; }
+
+.signups-view { max-width: 760px; }
+.sg-filter { margin: 8px 0 12px; }
+.sg-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 12px 0; }
+.sg-summary > div { display: flex; flex-direction: column; align-items: center; padding: 10px 6px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); }
+.sg-summary strong { font-family: var(--serif); font-size: 1.8rem; line-height: 1.2; }
+.sg-summary span { font-size: .9rem; color: var(--ink-2); }
+.sg-summary .is-short { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.sg-summary .is-short span { color: var(--accent); }
+.sg-day { margin-top: 18px; }
+.sg-date { display: flex; align-items: baseline; gap: 10px; margin: 0 0 8px; font-family: var(--serif); font-size: 1.15rem; }
+.sg-item { margin-bottom: 8px; padding: 10px 12px; background: var(--card); border: 1px solid var(--line); border-left: 5px solid #4d6b4f; border-radius: var(--radius); }
+.sg-item.kind-short { border-left-color: var(--accent); }
+.sg-item.kind-full { border-left-color: #8a8479; }
+.sg-item.kind-notice { border-left-color: #3f5b7d; }
+.sg-head { display: flex; align-items: center; gap: 10px; color: inherit; text-decoration: none; }

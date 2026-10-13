@@ -36,7 +36,31 @@ function fakeJiaoquan(year) {
     { id: 'D-demo4', name: '青少年班', category: '教育', nature: '課程', mode: '報名型', start: day(10), end: day(10), startTime: '14:00', endTime: '16:00', location: '區中心', attire: '' },
     { id: 'D-demo5', name: '彌勒山志工輪值', category: '勤務', nature: '勤務', mode: '報名型', start: day(17), end: day(19), startTime: '09:00', endTime: '17:00', location: '彌勒山', attire: '' }
   ].filter((d) => inYear(d.start) || inYear(d.end));
-  return { ok: true, data: { contact: '測試丙', venue: [{ date: day(2), slot: '晚上', name: '測試丁', purpose: '讀書會' }], duties } };
+  return { ok: true, data: { contact: '測試丙', venue: [{ date: day(2), slot: '晚上', name: '測試丁', purpose: '讀書會' }], duties: duties.map(withSignups) } };
+}
+
+// 假的報名（只有假名）：了愿項目、每天人數、名單
+const FAKE_NAMES = ['王小明', '測試甲', '測試乙', '測試丙', '李小華', '陳大同', '林小美'];
+function withSignups(d) {
+  if (d.mode === '公告型') return Object.assign({ positions: [], days: {}, signups: [] }, d);
+  const positions = d.category === '勤務'
+    ? [{ id: d.id + '-P1', name: d.name.includes('打掃') ? '打掃' : '勤務', min: 3, max: null }, { id: d.id + '-P2', name: '茶水', min: 1, max: 1 }]
+    : [{ id: d.id + '-P1', name: '參加', min: 0, max: null }];
+  const days = {};
+  const signups = [];
+  let k = d.id.length;
+  for (let t = Date.parse(d.start); t <= Date.parse(d.end); t += 86400e3) {
+    const date = new Date(t).toISOString().slice(0, 10);
+    const counts = {};
+    positions.forEach((p, i) => {
+      const n = (k++ % 3) + (i ? 0 : 1);
+      counts[p.id] = Math.min(n, p.max === null ? n : p.max);
+      for (let j = 0; j < counts[p.id]; j++) signups.push({ id: 'S' + signups.length, date, positionId: p.id, name: FAKE_NAMES[(k + j) % FAKE_NAMES.length], temple: '（假）', accompany: j === 2, note: '' });
+    });
+    const total = Object.values(counts).reduce((a, b) => a + b, 0);
+    days[date] = { total, people: total, shortage: 0, full: false, counts };
+  }
+  return Object.assign({}, d, { positions, days, signups });
 }
 
 let worker = null;
@@ -47,8 +71,18 @@ async function startMock() {
   // 假的對外連線：教全區給假資料；推播不真的送（只印出來）
   const fakeFetch = async (url) => {
     if (url.startsWith('https://duty-calendar-api')) {
-      const year = Number(new URL(url).searchParams.get('from').slice(0, 4));
-      return { ok: true, json: async () => fakeJiaoquan(year) };
+      const q = new URL(url).searchParams;
+      const all = fakeJiaoquan(Number(day(0).slice(0, 4))).data.duties.concat(fakeJiaoquan(Number(day(0).slice(0, 4)) + 1).data.duties);
+      if (q.get('action') === 'getBundle') {
+        const details = {};
+        all.filter((d) => d.start <= q.get('to') && d.end >= q.get('from')).forEach((d) => { details[d.id] = d; });
+        return { ok: true, json: async () => ({ ok: true, data: { duties: [], details } }) };
+      }
+      if (q.get('action') === 'getDuty') {
+        const d = all.find((x) => x.id === q.get('id'));
+        return { ok: true, json: async () => (d ? { ok: true, data: d } : { ok: false, error: { code: 'NOT_FOUND', message: '找不到' } }) };
+      }
+      return { ok: true, json: async () => fakeJiaoquan(Number(q.get('from').slice(0, 4))) };
     }
     console.log('（假）送推播', url.slice(0, 60));
     return { ok: true, status: 201, json: async () => ({}) };

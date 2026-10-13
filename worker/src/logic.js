@@ -99,6 +99,64 @@ export function publicEvent(ev) {
   };
 }
 
+// ---------- 教全區的報名狀態（規格第 9-1 節，算法同教全區 js/format.js 的 dayState） ----------
+
+const DEFAULT_MIN_PEOPLE = 2;
+function effectiveMin(p) {
+  if (p.min !== null && p.min !== undefined) return p.min;
+  return p.max !== null && p.max !== undefined ? Math.min(DEFAULT_MIN_PEOPLE, p.max) : DEFAULT_MIN_PEOPLE;
+}
+
+/** 教全區某勤務某一天的狀態：{ kind: notice|full|short|ok, label } */
+export function dayStatus(duty, day) {
+  if (duty.mode === '公告型') return { kind: 'notice', label: duty.group ? `輪值：${str(duty.group).slice(0, 20)}` : '公告' };
+  const d = day || { total: 0, shortage: 0, full: false, counts: {} };
+  const total = Number(d.total) || 0;
+  const counts = d.counts || {};
+  const positions = Array.isArray(duty.positions) ? duty.positions : [];
+  if (duty.category === '道務' || duty.category === '教育') { // 自由參加、鼓勵為主：不算缺人
+    return d.full ? { kind: 'full', label: '額滿' } : { kind: 'ok', label: `已報 ${total} 人` };
+  }
+  const people = d.people !== undefined ? Number(d.people) || 0 : total;
+  const shortage = duty.totalNeed
+    ? Math.max(duty.totalNeed - people, 0)
+    : positions.reduce((sum, p) => sum + Math.max(effectiveMin(p) - (Number(counts[p.id]) || 0), 0), 0);
+  if (d.full) return { kind: 'full', label: '額滿' };
+  if (shortage > 0) return { kind: 'short', label: `缺 ${shortage} 人` };
+  const unlimited = positions.length > 0 && positions.every((p) => p.max === null || p.max === undefined);
+  return { kind: 'ok', label: unlimited ? `已報 ${total} 人` : `人數足・${total} 人` };
+}
+
+/**
+ * 教全區 getDuty／getBundle 的一筆詳情 → 名單。只留了愿項目名稱、日期、名字、是否陪同（佛堂、備註、組長、電話一律丟掉）。
+ * 回傳 { id, positions: [{ id, name }], signups: [{ date, positionId, name, accompany }] }
+ */
+export function rosterFrom(detail) {
+  const positions = (Array.isArray(detail && detail.positions) ? detail.positions : [])
+    .filter((p) => p && typeof p.id === 'string').map((p) => ({ id: p.id, name: str(p.name).slice(0, 40) }));
+  const signups = (Array.isArray(detail && detail.signups) ? detail.signups : [])
+    .filter((x) => x && isDate(x.date) && typeof x.positionId === 'string' && str(x.name))
+    .map((x) => ({ date: x.date, positionId: x.positionId, name: str(x.name).slice(0, 20), accompany: !!x.accompany }));
+  return { id: 'jq-' + detail.id, positions, signups };
+}
+
+/**
+ * 教全區一筆詳情 → 每一天的狀態與名單（from～to 內的日期）：
+ * [{ date, status, positions: [{ name, people: [{ name, accompany }] }] }]
+ */
+export function signupDays(detail, from, to) {
+  const r = rosterFrom(detail);
+  const days = detail && detail.days && typeof detail.days === 'object' ? detail.days : {};
+  return Object.keys(days).filter((d) => isDate(d) && (!from || d >= from) && (!to || d <= to)).sort().map((date) => ({
+    date,
+    status: dayStatus(detail, days[date]),
+    positions: r.positions.map((p) => ({
+      name: p.name,
+      people: r.signups.filter((x) => x.date === date && x.positionId === p.id).map((x) => ({ name: x.name, accompany: x.accompany }))
+    }))
+  }));
+}
+
 /**
  * 教全區 getEvents 的回應 → 分壇的活動格式。
  * 教全區的資料裡有人名（聯絡人、借場地的人、組長、師資⋯），這裡只挑規格第 4 節列的欄位，其他一律丟掉。
@@ -126,7 +184,8 @@ export function fromJiaoquan(data) {
       location: str(d.location).slice(0, 60),
       attire: str(d.attire).slice(0, 60),
       note: '',
-      link: SITE.jiaoquan.site + '#/duty/' + encodeURIComponent(d.id)
+      link: SITE.jiaoquan.site + '#/duty/' + encodeURIComponent(d.id),
+      status: Object.keys(d.days && typeof d.days === 'object' ? d.days : {}).filter(isDate).reduce((o, date) => { o[date] = dayStatus(d, d.days[date]); return o; }, {})
     });
   });
   return out;

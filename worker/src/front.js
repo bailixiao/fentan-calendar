@@ -3,7 +3,7 @@
 //     人再多也不會每次都問資料庫或教全區（規格第 6 節）。
 //   - 管理動作（POST）：轉給 Durable Object。
 import { SITE } from './site.js';
-import { AppError, checkRange, fromJiaoquan, inRange, taipeiDate, yearsOf } from './logic.js';
+import { AppError, checkRange, fromJiaoquan, inRange, signupDays, taipeiDate, yearsOf } from './logic.js';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -64,6 +64,66 @@ export function createFront(opts) {
 
   // ---------- 教全區：依年份快取 5 分鐘；讀不到就用上次的 ----------
   const jq = new Map(); // year → { at, events, promise }
+
+  /** 讀教全區的公開 API，回傳 data（讀不到丟錯） */
+  async function jqGet(params) {
+    const url = SITE.jiaoquan.api + '?' + new URLSearchParams(params);
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), jqTimeout);
+    try {
+      const res = await fetchFn(url, { signal: ctrl.signal });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const body = await res.json();
+      if (!body || !body.ok) throw new AppError(body && body.error && body.error.code === 'NOT_FOUND' ? 'NOT_FOUND' : 'UPSTREAM', '教全區的資料暫時讀不到');
+      return body.data;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  // ---------- 教全區的報名名單（規格第 9-1 節） ----------
+  const bundle = { at: 0, data: null, promise: null }; // getBundle：今天起 30 天，5 分鐘
+  const rosters = new Map(); // getDuty：id → { at, data }，2 分鐘
+
+  function summaryOf(detail, from, to) {
+    const ev = fromJiaoquan({ duties: [detail] })[0];
+    if (!ev) return null;
+    const { id, name, category, mode, start, end, startTime, endTime, location, link } = ev;
+    return { id, unit: ev.unit, name, category, mode, start, end, startTime, endTime, location, link, days: signupDays(detail, from, to) };
+  }
+
+  async function getSignups() {
+    if (!(bundle.data && now() - bundle.at < jqTtl)) {
+      if (!bundle.promise) {
+        const from = taipeiDate(now());
+        const to = taipeiDate(now() + 30 * 86400e3);
+        bundle.promise = jqGet({ action: 'getBundle', from, to }).then((data) => {
+          const items = Object.values(data.details || {}).map((d) => summaryOf(d, from, to)).filter((x) => x && x.days.length);
+          bundle.data = { from, to, items };
+          bundle.at = now();
+        }).finally(() => { bundle.promise = null; });
+      }
+      try {
+        await bundle.promise;
+      } catch (err) {
+        if (!bundle.data) throw new AppError('UPSTREAM', '教全區的報名資料暫時讀不到，請稍後再試');
+      }
+    }
+    return Object.assign({ today: taipeiDate(now()) }, bundle.data);
+  }
+
+  async function getRoster(params) {
+    const id = params.get('id') || '';
+    const m = id.match(/^jq-([\w-]{1,60})$/);
+    if (!m) throw new AppError('BAD_REQUEST', '活動代號不對');
+    const hit = rosters.get(m[1]);
+    if (hit && now() - hit.at < 120e3) return hit.data;
+    const detail = await jqGet({ action: 'getDuty', id: m[1] });
+    const data = summaryOf(detail);
+    if (rosters.size > 500) rosters.clear();
+    rosters.set(m[1], { at: now(), data });
+    return data;
+  }
 
   async function fetchJiaoquanYear(year) {
     const url = SITE.jiaoquan.api + '?' + new URLSearchParams({ action: 'getEvents', from: `${year}-01-01`, to: `${year}-12-31` });
@@ -132,6 +192,8 @@ export function createFront(opts) {
         const waitUntil = ctx && ctx.waitUntil ? (p) => ctx.waitUntil(p) : null;
         if (action === 'getEvents') return json({ ok: true, data: await getEvents(url.searchParams, waitUntil) });
         if (action === 'ping') return json({ ok: true, data: { today: taipeiDate(now()) } });
+        if (action === 'getSignups') return json({ ok: true, data: await getSignups() });
+        if (action === 'getRoster') return json({ ok: true, data: await getRoster(url.searchParams) });
         // 手機提醒：公鑰（不會變，記在這個 Worker）、手機收到推播後來問要顯示什麼
         if (action === 'pushKey') {
           if (!pushKey) pushKey = await storeCall({ action: 'pushKey' });

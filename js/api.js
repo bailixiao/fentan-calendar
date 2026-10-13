@@ -123,6 +123,9 @@
   window.Api = {
     ApiError,
     getEvents: (from, to, fresh) => get('getEvents', Object.assign({ from, to }, fresh ? { fresh: '1' } : {})),
+    // 各區報名連動（目前是教全區）：狀態與名單
+    getSignups: () => get('getSignups', {}),
+    getRoster: (id) => get('getRoster', { id }),
     // 手機提醒：只送推播網址和單位，沒有名字
     pushKey: () => get('pushKey', {}),
     pushSubscribe: (endpoint, unit) => post({ action: 'pushSubscribe', endpoint, unit }),

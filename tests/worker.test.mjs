@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { createFront } from '../worker/src/front.js';
 import { createStoreApp } from '../worker/src/store-app.js';
 import { createMemoryStore } from '../worker/src/store.js';
-import { cleanEvent, fromJiaoquan, isDate, taipeiDate, editableUnits } from '../worker/src/logic.js';
+import { cleanEvent, fromJiaoquan, isDate, taipeiDate, editableUnits, dayStatus, rosterFrom } from '../worker/src/logic.js';
 import { SITE } from '../worker/src/site.js';
 
 // 假的教全區回應：故意放人名欄位，確認不會傳出去
@@ -94,7 +94,7 @@ test('fromJiaoquan：只留允許的欄位，丟掉人名與借場地', () => {
   const text = JSON.stringify(list);
   ['測試甲', '測試乙', '測試丙', '測試丁', '測試戊', '測試己'].forEach((n) => assert.ok(!text.includes(n), n));
   const a = list.find((e) => e.id === 'jq-D-1');
-  assert.deepEqual(Object.keys(a).sort(), ['attire', 'category', 'end', 'endTime', 'id', 'link', 'location', 'mode', 'name', 'nature', 'note', 'source', 'start', 'startTime', 'unit'].sort());
+  assert.deepEqual(Object.keys(a).sort(), ['attire', 'category', 'end', 'endTime', 'id', 'link', 'location', 'mode', 'name', 'nature', 'note', 'source', 'start', 'startTime', 'status', 'unit'].sort());
   assert.equal(a.unit, '教全區');
   assert.equal(a.link, 'https://bailixiao.github.io/duty-calendar/#/duty/D-1');
   assert.equal(list.find((e) => e.id === 'jq-D-2').mode, '公告型');
@@ -316,4 +316,24 @@ test('批次匯入：沒登入不行、空的不行、超過 300 筆不行', asy
   assert.equal(r.error.code, 'BAD_REQUEST');
   r = await env.post({ action: 'adminImport', token, events: Array.from({ length: 301 }, () => sampleEvent()) });
   assert.match(r.error.message, /300/);
+});
+
+test('教全區的報名狀態：和教全區的算法一樣', () => {
+  const pos = [{ id: 'A', min: 2, max: null }, { id: 'B', min: null, max: 1 }];
+  const duty = { category: '勤務', mode: '報名型', positions: pos };
+  assert.deepEqual(dayStatus(duty, { total: 1, counts: { A: 1 } }), { kind: 'short', label: '缺 2 人' }); // A 缺 1、B 最少 1 缺 1
+  assert.deepEqual(dayStatus(duty, { total: 3, counts: { A: 2, B: 1 } }), { kind: 'ok', label: '人數足・3 人' });
+  assert.deepEqual(dayStatus(duty, { total: 3, full: true, counts: {} }), { kind: 'full', label: '額滿' });
+  assert.deepEqual(dayStatus({ category: '勤務', positions: [{ id: 'A', min: 1, max: null }] }, { total: 4, counts: { A: 4 } }), { kind: 'ok', label: '已報 4 人' });
+  assert.deepEqual(dayStatus({ category: '勤務', totalNeed: 5, positions: pos }, { total: 4, people: 3, counts: {} }), { kind: 'short', label: '缺 2 人' });
+  assert.deepEqual(dayStatus({ category: '道務', positions: pos }, { total: 7 }), { kind: 'ok', label: '已報 7 人' });
+  assert.deepEqual(dayStatus({ category: '教育', positions: pos }, undefined), { kind: 'ok', label: '已報 0 人' });
+  assert.deepEqual(dayStatus({ mode: '公告型', group: '第4組' }, {}), { kind: 'notice', label: '輪值：第4組' });
+});
+
+test('教全區名單：只留項目、日期、名字、陪同', () => {
+  const r = rosterFrom({ id: 'D-1', groupLeader: '測試甲', contact: '測試乙', positions: [{ id: 'P1', name: '打掃', min: 2 }],
+    signups: [{ id: 'S1', date: '2026-10-24', positionId: 'P1', name: '王小明', temple: '某佛堂', accompany: true, leader: true, note: '電話 0900-000-000' }, { date: 'bad', positionId: 'P1', name: 'x' }] });
+  assert.deepEqual(r, { id: 'jq-D-1', positions: [{ id: 'P1', name: '打掃' }], signups: [{ date: '2026-10-24', positionId: 'P1', name: '王小明', accompany: true }] });
+  assert.ok(!JSON.stringify(r).includes('測試甲') && !JSON.stringify(r).includes('0900') && !JSON.stringify(r).includes('佛堂'));
 });

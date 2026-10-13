@@ -504,6 +504,7 @@
           <span class="card-title">${Fmt.esc(ev.name)}</span>
           ${meta.length ? `<span class="card-meta">${meta.map(Fmt.esc).join('・')}</span>` : ''}
         </span>
+        ${ev.status ? Fmt.statusBadge(ev.status[date]) : ''}
         <span class="card-go" aria-hidden="true">›</span>
       </a>`;
   }
