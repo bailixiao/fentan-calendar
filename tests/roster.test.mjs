@@ -99,6 +99,32 @@ test('組長填名單：只看得到、只能填自己區的；每個了愿項�
   assert.ok(log.some((l) => l.action === '填名單' && /教慈區組長/.test(l.name)));
 });
 
+test('截止日期、服裝：勤務沒填就用分壇活動的；過了截止組長不能改，總管理者可以', async () => {
+  const env = setup();
+  const sup = env.ok(await env.post({ action: 'adminLogin', password: 'test-pass' })).token;
+  let r = await env.post({ action: 'adminSave', token: sup, event: E({ unit: '分壇', name: '統班', deadline: '2026-10-25' }) });
+  assert.match(r.error.message, /截止日期不能晚於/);
+  env.ok(await env.post({ action: 'adminSave', token: sup, event: E({ unit: '分壇', category: '道務', name: '統班', deadline: '2026-10-20', dress: '白上衣' }) }));
+  const cook = env.ok(await env.post({ action: 'adminSave', token: sup, event: E({ unit: '教慈區', name: '烹飪：統班', dress: '圍裙' }) })).event;
+  env.ok(await env.post({ action: 'adminSetAccount', token: sup, unit: '教慈區', password: 'ci-pass' }));
+  const ci = env.ok(await env.post({ action: 'adminLogin', account: '教慈區', password: 'ci-pass' })).token;
+  const cal = env.ok(await env.get('action=getCalendar&from=2026-10-01&to=2026-10-31'));
+  const tb = cal.events.find((e) => e.name === '統班');
+  assert.equal(tb.dress, '白上衣');
+  assert.deepEqual([tb.links[0].dress, tb.links[0].deadline], ['圍裙', '2026-10-20']);
+  let list = env.ok(await env.post({ action: 'adminRosterList', token: ci })).events;
+  assert.deepEqual([list[0].deadline, list[0].closed], ['2026-10-20', false]);
+  env.ok(await env.post({ action: 'adminRosterSave', token: ci, id: cook.id, date: '2026-10-24', key: '_', names: '測試甲' }));
+  env.clock.add(8 * 86400e3); // 10/21（登入過期，重新登入）
+  const ci2 = env.ok(await env.post({ action: 'adminLogin', account: '教慈區', password: 'ci-pass' })).token;
+  const sup2 = env.ok(await env.post({ action: 'adminLogin', password: 'test-pass' })).token;
+  list = env.ok(await env.post({ action: 'adminRosterList', token: ci2 })).events;
+  assert.equal(list[0].closed, true);
+  r = await env.post({ action: 'adminRosterSave', token: ci2, id: cook.id, date: '2026-10-24', key: '_', names: '測試乙' });
+  assert.match(r.error.message, /已經過了截止日期（10\/20）/);
+  env.ok(await env.post({ action: 'adminRosterSave', token: sup2, id: cook.id, date: '2026-10-24', key: '_', names: '測試乙' }));
+});
+
 test('行事曆的項目：掛在分壇活動下、沒對應的同名同日合成一張、區活動與測試區不出現', () => {
   const L = (o) => Object.assign({ source: 'local', category: '勤務', start: '2026-10-24', end: '2026-10-24', startTime: '', location: '', note: '', link: '', kind: '分壇分配', positions: [], roster: {} }, o);
   const items = buildCalendar([

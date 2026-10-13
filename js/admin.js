@@ -213,6 +213,8 @@
       <article class="roster-card${ev.id === focusId ? ' is-focus' : ''}" id="roster-${Fmt.esc(ev.id)}">
         <h3>${Fmt.esc(ev.name)}</h3>
         <p class="card-meta">${Fmt.esc([ev.start === ev.end ? Fmt.shortDate(ev.start) : `${Fmt.shortDate(ev.start)} – ${Fmt.shortDate(ev.end)}`, Fmt.timeRange(ev), ev.location].filter(Boolean).join('・'))}</p>
+        ${ev.dress ? `<p class="card-meta">服裝：${Fmt.esc(ev.dress)}</p>` : ''}
+        ${ev.deadline ? `<p class="deadline${ev.closed ? ' is-closed' : ''}">${ev.closed ? `已經過了截止日期（${md(ev.deadline)}）${isRegion ? '，要改名單請找分壇' : '，組長不能再改，總管理者還可以改'}` : `名單 ${Fmt.esc(Fmt.shortDate(ev.deadline))} 截止`}</p>` : ''}
         ${ev.note ? `<p class="hint">${Fmt.esc(ev.note)}</p>` : ''}
         ${Fmt.datesBetween(ev.start, ev.end).map((d) => `
           <div class="roster-date">
@@ -221,9 +223,9 @@
               const names = ((ev.roster || {})[d] || {})[p.id] || [];
               return `<form class="roster-fill" data-id="${Fmt.esc(ev.id)}" data-date="${d}" data-key="${Fmt.esc(p.id)}" data-max="${p.max || ''}">
                 <label class="form-row"><span><strong>${Fmt.esc(p.name)}</strong>${need(p) ? `（${Fmt.esc(need(p))}）` : ''}：已填 <b data-count>${names.length}</b> 人</span>
-                  <textarea class="input textarea" name="names" rows="2" placeholder="名字之間空一格或用、隔開，例：王小明、測試甲">${Fmt.esc(names.join('、'))}</textarea></label>
+                  <textarea class="input textarea" name="names" rows="2"${ev.closed && isRegion ? ' readonly' : ''} placeholder="名字之間空一格或用、隔開，例：王小明、測試甲">${Fmt.esc(names.join('、'))}</textarea></label>
                 <div class="name-preview" data-preview aria-live="polite"></div>
-                <div class="roster-fill-actions"><button type="submit" class="btn btn-primary btn-small">儲存</button><span class="muted" data-msg></span></div>
+                <div class="roster-fill-actions"><button type="submit" class="btn btn-primary btn-small"${ev.closed && isRegion ? ' disabled' : ''}>儲存</button><span class="muted" data-msg></span></div>
               </form>`;
             }).join('')}
           </div>`).join('')}
@@ -415,6 +417,7 @@
     if (ev.end && ev.start && ev.end < ev.start) errs.push('結束日期不能早於開始日期');
     if (ev.endTime && !ev.startTime) errs.push('有結束時間就要填開始時間');
     if (ev.link && !/^https:\/\/\S+$/.test(ev.link)) errs.push('相關連結要以 https:// 開頭');
+    if (ev.deadline && ev.deadline > (ev.end || ev.start)) errs.push('截止日期不能晚於活動的最後一天');
     return errs;
   }
 
@@ -439,7 +442,10 @@
     const unitBlock = multi ? `
       <label class="radio-row"><input type="radio" name="scope" value="fentan"${isRegion ? '' : ' checked'}> 分壇自己的活動</label>
       <label class="radio-row"><input type="radio" name="scope" value="regions"${isRegion ? ' checked' : ''}> 派給區（可以勾好幾區，每區各一筆）</label>
-      <div class="push-units unit-checks"${isRegion ? '' : ' hidden'}>${regions.map((u) => `<label class="check-chip"><input type="checkbox" name="units" value="${Fmt.esc(u)}"${u === ev.unit ? ' checked' : ''}> ${Fmt.esc(u)}</label>`).join('')}</div>`
+      <div class="unit-checks"${isRegion ? '' : ' hidden'}>
+        <div class="check-all"><button type="button" class="btn btn-small" data-act="check-all">全選（${window.SITE.units.length} 區）</button><button type="button" class="btn btn-small" data-act="check-none">全不選</button></div>
+        <div class="push-units">${regions.map((u) => `<label class="check-chip"><input type="checkbox" name="units" value="${Fmt.esc(u)}"${u === ev.unit ? ' checked' : ''}> ${Fmt.esc(u)}</label>`).join('')}</div>
+      </div>`
       : `<label class="form-row"><span>單位</span><select class="input" name="unit">${opt(editableUnits(), ev.unit)}</select></label>`;
     view.innerHTML = tabs(mode === 'new' ? 'new' : '') + `
       <form class="admin-form" novalidate>
@@ -448,9 +454,9 @@
         <fieldset class="form-block">
           <legend>哪一個單位、哪一類</legend>
           ${unitBlock}
-          ${ev.kind === '區活動' ? '<p class="hint kind-note">這筆是「區自己的活動」（例如範例資料），只記在分壇行事曆上，不會帶到各區報名系統。</p>' : '<p class="hint kind-note">派給區的是「分壇分配的勤務」，會帶到各區報名系統讓家人報名。</p>'}
+          ${ev.kind === '區活動' ? '<p class="hint kind-note">這筆是「區自己的活動」（例如範例資料），只記在後台，行事曆上不顯示。</p>' : '<p class="hint kind-note">派給區的是「分壇分配的勤務」，由各區組長在分壇行事曆填名單。</p>'}
           <label class="form-row"><span>類別</span><select class="input" name="category">${opt(window.SITE.categories, ev.category, Fmt.catLabel)}</select></label>
-          <p class="hint">「${Fmt.esc(window.SITE.testRegion)}」只在後台出現，用來試各區報名系統的連動，行事曆上不顯示。</p>
+          <p class="hint">「${Fmt.esc(window.SITE.testRegion)}」只在後台出現，用來試填名單，行事曆上不顯示。</p>
         </fieldset>
         <fieldset class="form-block">
           <legend>活動</legend>
@@ -464,6 +470,11 @@
             <label><span>結束時間（可以不填）</span><input class="input" type="time" name="endTime" value="${Fmt.esc(ev.endTime || '')}"></label>
           </div>
           <label class="form-row"><span>地點</span><input class="input" name="location" maxlength="60" value="${Fmt.esc(ev.location || '')}"></label>
+          <div class="form-row-pair">
+            <label><span>截止日期（可以不填）</span><input class="input" type="date" name="deadline" value="${Fmt.esc(ev.deadline || '')}"></label>
+            <label><span>服裝（可以不填）</span><input class="input" name="dress" maxlength="60" value="${Fmt.esc(ev.dress || '')}" placeholder="例：白上衣、深色長褲"></label>
+          </div>
+          <p class="hint">截止日期是各區組長填名單的最後一天，過了那天組長就不能改（總管理者還可以改）。分壇活動填了，掛在下面的各區勤務沒填的也照這一天。</p>
           <label class="form-row"><span>說明（可以不填）</span><textarea class="input textarea" name="note" rows="4" maxlength="1000">${Fmt.esc(ev.note || '')}</textarea></label>
           <label class="form-row"><span>相關連結（可以不填，要 https:// 開頭）</span><input class="input" type="url" name="link" maxlength="500" value="${Fmt.esc(ev.link || '')}" placeholder="https://"></label>
         </fieldset>
@@ -496,12 +507,16 @@
         if (list.children.length < 10) list.insertAdjacentHTML('beforeend', posRow({}));
       }
       if (b.hasAttribute('data-rm')) b.closest('.pos-row').remove();
+      // 全選＝16 區（測試區不算）；全不選＝全部取消
+      if (b.dataset.act === 'check-all' || b.dataset.act === 'check-none') {
+        form.querySelectorAll('[name="units"]').forEach((c) => { c.checked = b.dataset.act === 'check-all' && c.value !== window.SITE.testRegion; });
+      }
     });
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const f = new FormData(form);
       const data = {};
-      ['category', 'name', 'start', 'end', 'startTime', 'endTime', 'location', 'note', 'link'].forEach((k) => { data[k] = String(f.get(k) || '').trim(); });
+      ['category', 'name', 'start', 'end', 'startTime', 'endTime', 'location', 'dress', 'deadline', 'note', 'link'].forEach((k) => { data[k] = String(f.get(k) || '').trim(); });
       if (!data.end) data.end = data.start;
       const errs = [];
       if (multi) {
@@ -566,7 +581,7 @@
   /** 匯入的一筆：整理欄位並檢查（和伺服器同樣的規則，伺服器還會再檢查一次） */
   function checkImportRow(raw) {
     const v = (k) => (raw && raw[k] !== undefined && raw[k] !== null ? String(raw[k]).trim() : '');
-    const ev = { unit: v('unit'), category: v('category'), name: v('name'), start: v('start'), end: v('end') || v('start'), startTime: v('startTime'), endTime: v('endTime'), location: v('location'), note: v('note'), link: v('link'), kind: v('kind'), positions: Array.isArray(raw && raw.positions) ? raw.positions : [] };
+    const ev = { unit: v('unit'), category: v('category'), name: v('name'), start: v('start'), end: v('end') || v('start'), startTime: v('startTime'), endTime: v('endTime'), location: v('location'), dress: v('dress'), deadline: v('deadline'), note: v('note'), link: v('link'), kind: v('kind'), positions: Array.isArray(raw && raw.positions) ? raw.positions : [] };
     const errs = [];
     if (ev.unit === window.SITE.jiaoquan.unit && ev.kind === '區活動') errs.push('教全區自己的活動會自動讀進來，不用匯入');
     else if (editableUnits().indexOf(ev.unit) === -1) errs.push('單位不對');
@@ -579,6 +594,7 @@
     if (ev.endTime && !TIME_RE.test(ev.endTime)) errs.push('結束時間格式不對');
     if (ev.endTime && !ev.startTime) errs.push('有結束時間卻沒有開始時間');
     if (ev.link && !/^https:\/\/\S+$/.test(ev.link)) errs.push('連結要 https:// 開頭');
+    if (ev.deadline && !DATE_RE.test(ev.deadline)) errs.push('截止日期格式不對');
     if (ev.name.length > 60) errs.push('名稱超過 60 字');
     return { ev, errs };
   }

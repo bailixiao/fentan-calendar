@@ -4,7 +4,7 @@ import { SITE } from './site.js';
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 const MAX_DAYS = 60; // 一筆活動最長幾天
-const LIMITS = { name: 60, location: 60, note: 1000, link: 500 };
+const LIMITS = { name: 60, location: 60, dress: 60, note: 1000, link: 500 };
 
 export class AppError extends Error {
   constructor(code, message) {
@@ -93,6 +93,8 @@ export function cleanEvent(input, newId) {
     startTime: str(input.startTime),
     endTime: str(input.endTime),
     location: str(input.location),
+    dress: str(input.dress),
+    deadline: str(input.deadline),
     note: str(input.note).replace(/\r\n?/g, '\n'),
     link: str(input.link)
   };
@@ -117,8 +119,10 @@ export function cleanEvent(input, newId) {
   if (ev.endTime && !isTime(ev.endTime)) errs.push('結束時間格式不對（例：17:00）');
   if (ev.endTime && !ev.startTime) errs.push('有結束時間就要填開始時間');
   if (ev.link && !/^https:\/\/[^\s]+$/.test(ev.link)) errs.push('相關連結要以 https:// 開頭');
+  if (ev.deadline && !isDate(ev.deadline)) errs.push('截止日期格式不對');
+  else if (ev.deadline && isDate(ev.end) && ev.deadline > ev.end) errs.push('截止日期不能晚於活動的最後一天');
   Object.keys(LIMITS).forEach((k) => {
-    if (ev[k].length > LIMITS[k]) errs.push(`${({ name: '活動名稱', location: '地點', note: '說明', link: '相關連結' })[k]}最多 ${LIMITS[k]} 字`);
+    if (ev[k].length > LIMITS[k]) errs.push(`${({ name: '活動名稱', location: '地點', dress: '服裝', note: '說明', link: '相關連結' })[k]}最多 ${LIMITS[k]} 字`);
   });
   if (errs.length) throw new AppError('BAD_REQUEST', errs.join('；'));
   return ev;
@@ -134,7 +138,7 @@ export function publicEvent(ev) {
   return {
     id: ev.id, source: 'local', unit: ev.unit, category: ev.category, name: ev.name,
     start: ev.start, end: ev.end, startTime: ev.startTime || '', endTime: ev.endTime || '',
-    location: ev.location || '', note: ev.note || '', link: ev.link || '',
+    location: ev.location || '', dress: ev.dress || '', deadline: ev.deadline || '', note: ev.note || '', link: ev.link || '',
     kind: ev.unit === SITE.fentan ? '' : ev.kind || KINDS[0],
     positions: Array.isArray(ev.positions) ? ev.positions : [],
     roster: ev.roster && typeof ev.roster === 'object' ? ev.roster : {} // 各區組長填的名單：日期 → 了愿項目（沒有項目用 _）→ 名字（規格第 9-4 節）
@@ -257,9 +261,17 @@ function sortLinks(list) {
   return list.sort((a, b) => order(a.unit) - order(b.unit));
 }
 
-/** 掛著的各區勤務：附了愿項目與各區組長填的名單（規格第 9-4 節） */
-function linkOf(e) {
-  return { id: e.id, unit: e.unit, name: e.name, start: e.start, end: e.end, positions: e.positions || [], roster: e.roster || {} };
+/** 掛著的各區勤務：附了愿項目與各區組長填的名單（規格第 9-4 節）。截止日期：勤務自己沒填就用掛的分壇活動的 */
+function linkOf(e, parent) {
+  return { id: e.id, unit: e.unit, name: e.name, start: e.start, end: e.end, dress: e.dress || '',
+    deadline: e.deadline || (parent && parent.deadline) || '', positions: e.positions || [], roster: e.roster || {} };
+}
+
+/** 每一筆派給區的勤務實際的截止日期（id → yyyy-MM-dd 或 ''） */
+export function deadlinesOf(events) {
+  const map = {};
+  buildCalendar(events, true).forEach((item) => (item.links || []).forEach((l) => { map[l.id] = l.deadline; }));
+  return map;
 }
 
 /**
@@ -277,7 +289,7 @@ export function buildCalendar(events, test) {
     const key = parentKey(f.name);
     const links = [];
     if (key.length >= 2) {
-      assigned.forEach((a) => { if (!used.has(a.id) && overlap(a, f) && coreName(a.name).indexOf(key) !== -1) { links.push(linkOf(a)); used.add(a.id); } });
+      assigned.forEach((a) => { if (!used.has(a.id) && overlap(a, f) && coreName(a.name).indexOf(key) !== -1) { links.push(linkOf(a, f)); used.add(a.id); } });
     }
     return Object.assign({}, f, { links: sortLinks(links) });
   });
@@ -292,7 +304,8 @@ export function buildCalendar(events, test) {
     items.push({
       id: 'G-' + first.id, source: 'group', unit: SITE.fentan, category: first.category, name: first.name,
       start: first.start, end: first.end, startTime: first.startTime || '', endTime: first.endTime || '',
-      location: first.location || '', note: first.note || '', link: '', links: sortLinks(list.map(linkOf))
+      location: first.location || '', dress: first.dress || '', deadline: first.deadline || '', note: first.note || '', link: '',
+      links: sortLinks(list.map((a) => linkOf(a)))
     });
   });
   return items.sort((a, b) => a.start.localeCompare(b.start) || (a.startTime || '').localeCompare(b.startTime || '') || a.name.localeCompare(b.name));

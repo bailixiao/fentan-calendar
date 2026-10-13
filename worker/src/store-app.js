@@ -1,6 +1,6 @@
 // 在 Durable Object 裡執行的部分：手動活動的讀寫、管理者登入。所有請求依序處理，不會兩筆同時改。
 // call(body) 回傳 { ok: true, data } 或 { ok: false, error: { code, message } }。
-import { AppError, cleanEvent, cleanRosterNames, newEventId, publicEvent, taipeiDate, taipeiStamp, editableUnits } from './logic.js';
+import { AppError, cleanEvent, cleanRosterNames, deadlinesOf, newEventId, publicEvent, taipeiDate, taipeiStamp, editableUnits } from './logic.js';
 import { SITE } from './site.js';
 import { createPushApp } from './push-app.js';
 
@@ -126,7 +126,9 @@ export function createStoreApp(store, opts) {
     const from = taipeiDate(now() - 7 * 86400e3);
     const to = taipeiDate(now() + 120 * 86400e3);
     const events = store.allEvents().filter((e) => e.unit === unit && e.kind !== '區活動' && e.end >= from && e.start <= to);
-    return { unit, today: taipeiDate(now()), events: sortEvents(events).map(publicEvent) };
+    const dl = deadlinesOf(store.allEvents().map(publicEvent));
+    const today = taipeiDate(now());
+    return { unit, today, events: sortEvents(events).map((e) => Object.assign(publicEvent(e), { deadline: dl[e.id] || e.deadline || '', closed: !!dl[e.id] && today > dl[e.id] })) };
   }
 
   function adminRosterSave(body, who) {
@@ -134,6 +136,10 @@ export function createStoreApp(store, opts) {
     if (!ev) throw new AppError('NOT_FOUND', '找不到這筆勤務，可能已經被刪除');
     if (ev.unit === SITE.fentan || ev.kind === '區活動') throw new AppError('BAD_REQUEST', '這筆不是派給區的勤務');
     if (who && ev.unit !== who) throw new AppError('UNAUTHORIZED', '只能填自己區的名單');
+    const deadline = deadlinesOf(store.allEvents().map(publicEvent))[ev.id] || '';
+    if (who && deadline && taipeiDate(now()) > deadline) {
+      throw new AppError('BAD_REQUEST', `已經過了截止日期（${Number(deadline.slice(5, 7))}/${Number(deadline.slice(8, 10))}），要改名單請找分壇`);
+    }
     const date = typeof body.date === 'string' ? body.date : '';
     if (!date || date < ev.start || date > ev.end) throw new AppError('BAD_REQUEST', '日期不在這筆勤務的期間');
     const key = typeof body.key === 'string' ? body.key : '';

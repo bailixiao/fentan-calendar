@@ -750,6 +750,10 @@ select.input { appearance: auto; }
 .roster-fill-actions { display: flex; align-items: center; gap: 10px; }
 .linked-item .roster small { margin-left: 4px; }
 .linked-item .fill-btn { margin-top: 8px; font-weight: 700; }
+.check-all { display: flex; gap: 8px; margin: 4px 0 8px; }
+.deadline { margin: 6px 0 0; font-weight: 700; color: var(--ink-2); }
+.deadline.is-closed { color: var(--accent); }
+.roster-fill textarea[readonly] { background: var(--paper-2); color: var(--muted); }
 .name-preview { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .name-preview:empty { display: none; }
 .name-preview .form-error { flex-basis: 100%; margin: 0; }

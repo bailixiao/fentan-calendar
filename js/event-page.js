@@ -25,6 +25,8 @@
     return Fmt.timeRange(ev);
   }
 
+  const today = () => Fmt.toDateStr(new Date());
+
   function linksOn(ev, date) {
     return (ev.links || []).filter((l) => l.start <= date && l.end >= date);
   }
@@ -40,6 +42,8 @@
         ${row('日期', dateText(ev, date))}
         ${row('時間', Fmt.esc(timeText(ev)))}
         ${row('地點', Fmt.esc(ev.location))}
+        ${row('服裝', Fmt.esc(ev.dress))}
+        ${row('截止', ev.deadline ? `${Fmt.esc(Fmt.shortDate(ev.deadline))}${today() > ev.deadline ? '　<span class="muted">已截止</span>' : ''}` : '')}
       </dl>
       ${ev.note ? `<section class="detail-section"><h2>說明</h2><p class="detail-desc">${Fmt.esc(ev.note).replace(/\n/g, '<br>')}</p></section>` : ''}
       ${hasLinks ? `<section class="detail-section"><h2>各區名單<span class="h2-sub">${Fmt.esc(Fmt.shortDate(date))}</span></h2>${linkedHtml(ev, date)}</section>` : ''}
@@ -65,8 +69,9 @@
             <span><span class="unit-tag">${Fmt.esc(l.unit)}</span> <strong>${Fmt.esc(l.name)}</strong></span>
             ${total ? `<span class="badge badge-ok">已填 ${total} 人</span>` : '<span class="badge badge-full">還沒填名單</span>'}
           </div>
+          ${l.dress || (l.deadline && l.deadline !== ev.deadline) ? `<p class="card-meta">${Fmt.esc([l.dress ? '服裝：' + l.dress : '', l.deadline && l.deadline !== ev.deadline ? Fmt.shortDate(l.deadline) + ' 截止' : ''].filter(Boolean).join('・'))}</p>` : ''}
           <ul class="roster">${rows}</ul>
-          <a class="btn btn-small fill-btn" href="#/admin/fill/${encodeURIComponent(l.unit)}/${encodeURIComponent(l.id)}">✏️ 填寫名單</a>
+          ${l.deadline && today() > l.deadline ? '<p class="hint">名單已截止</p>' : `<a class="btn btn-small fill-btn" href="#/admin/fill/${encodeURIComponent(l.unit)}/${encodeURIComponent(l.id)}">✏️ 填寫名單</a>`}
         </article>`;
     }).join('') + '<p class="hint">名單由各區組長在分壇行事曆填寫。</p>';
   }
