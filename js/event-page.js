@@ -51,7 +51,8 @@
   function linkedHtml(links) {
     return links.map((l) => {
       let body;
-      if (!l.open) body = '<p class="muted">這一區還沒有開放報名系統</p>';
+      if (l.hint === 'jiaoquan') body = `<p class="muted">請教全區在教全區行事曆建立這個勤務（名稱含「${Fmt.esc(l.key)}」），報名就會出現在這裡。</p>`;
+      else if (!l.open) body = '<p class="muted">這一區還沒有開放報名系統</p>';
       else if (l.error) body = `<p class="muted">${Fmt.esc(l.error)}</p>`;
       else if (!l.day) body = '<p class="muted">這天沒有報名資料</p>';
       else body = Fmt.rosterHtml(l.day);

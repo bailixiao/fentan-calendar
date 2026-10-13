@@ -36,9 +36,9 @@ export function daysBetween(a, b) {
   return Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400e3);
 }
 
-/** 可以在後台手動新增的單位：分壇＋各區（教全區除外，它的活動自動讀進來）＋測試區（只在後台） */
+/** 可以在後台新增的單位：分壇＋16 區＋測試區（只在後台）。教全區只能是「分壇分配」（教全區自己的活動從教全區系統讀進來） */
 export function editableUnits() {
-  return [SITE.fentan].concat(SITE.units.filter((u) => u !== SITE.jiaoquan.unit), SITE.testRegion);
+  return [SITE.fentan].concat(SITE.units, SITE.testRegion);
 }
 
 export const KINDS = ['分壇分配', '區活動']; // 單位是某一區時：分壇分配（帶到各區報名系統）／區活動（只記在分壇行事曆）
@@ -103,9 +103,8 @@ export function cleanEvent(input, newId) {
     if (KINDS.indexOf(ev.kind) === -1) errs.push('種類要是「分壇分配」或「區活動」');
   }
   ev.positions = cleanPositions(input.positions, makeId, errs);
-  if (editableUnits().indexOf(ev.unit) === -1) {
-    errs.push(ev.unit === SITE.jiaoquan.unit ? '教全區的活動會自動從教全區的系統讀進來，不用在這裡新增' : '請選擇單位');
-  }
+  if (editableUnits().indexOf(ev.unit) === -1) errs.push('請選擇單位');
+  if (ev.unit === SITE.jiaoquan.unit && ev.kind !== '分壇分配') errs.push('教全區自己的活動會自動從教全區的系統讀進來，這裡只能派分壇分配的勤務給教全區');
   if (SITE.categories.indexOf(ev.category) === -1) errs.push('請選擇類別');
   if (!ev.name) errs.push('請填活動名稱');
   if (!isDate(ev.start)) errs.push('開始日期格式不對');
@@ -260,7 +259,7 @@ export function yearsOf(from, to) {
 function coreName(name) {
   return String(name || '').replace(/（[^）]*）|\([^)]*\)/g, '').replace(/第\s*\d+\s*次\s*$/, '').replace(/[\s:：・、,，]/g, '');
 }
-function parentKey(name) {
+export function parentKey(name) {
   return coreName(String(name || '').split(/[：:]/)[0]);
 }
 

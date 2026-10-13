@@ -61,13 +61,13 @@ test('台北日期', () => {
   assert.equal(isDate('2026-02-28'), true);
 });
 
-test('區名：16 區、教全區在裡面、後台不能選教全區', () => {
+test('區名：16 區、教全區在裡面；後台可以選教全區（只能派分壇分配）與測試區', () => {
   assert.equal(SITE.units.length, 16);
   assert.ok(SITE.units.includes('教全區'));
   assert.equal(editableUnits()[0], '分壇');
-  assert.ok(!editableUnits().includes('教全區'));
-  assert.equal(editableUnits().length, 17); // 分壇＋15 區＋測試區
-  assert.equal(editableUnits()[16], '測試區');
+  assert.ok(editableUnits().includes('教全區'));
+  assert.equal(editableUnits().length, 18); // 分壇＋16 區＋測試區
+  assert.equal(editableUnits()[17], '測試區');
 });
 
 test('cleanEvent：整理欄位、結束日期預設同一天', () => {
@@ -78,7 +78,8 @@ test('cleanEvent：整理欄位、結束日期預設同一天', () => {
 });
 
 test('cleanEvent：擋掉各種錯誤，一次列出', () => {
-  assert.throws(() => cleanEvent(sampleEvent({ unit: '教全區' })), /自動從教全區/);
+  assert.throws(() => cleanEvent(sampleEvent({ unit: '教全區', kind: '區活動' })), /只能派分壇分配的勤務給教全區/);
+  assert.equal(cleanEvent(sampleEvent({ unit: '教全區' })).kind, '分壇分配');
   assert.throws(() => cleanEvent(sampleEvent({ unit: '不存在區' })), /請選擇單位/);
   assert.throws(() => cleanEvent(sampleEvent({ category: '其他' })), /請選擇類別/);
   assert.throws(() => cleanEvent(sampleEvent({ end: '2026-10-19' })), /不能早於/);
@@ -271,7 +272,7 @@ test('批次匯入：全部通過才寫入、跳過重複、整批刪除', async
   const token = await login(env);
   await env.post({ action: 'adminSave', token, event: sampleEvent({ unit: '教真區', name: '教真區研究班', start: '2026-10-21', startTime: '19:30', endTime: '' }) });
   // 有一筆錯：整批不存，錯誤訊息標出第幾筆
-  let r = await env.post({ action: 'adminImport', token, events: [sampleEvent({ unit: '教善區' }), sampleEvent({ unit: '教全區' })] });
+  let r = await env.post({ action: 'adminImport', token, events: [sampleEvent({ unit: '教善區' }), sampleEvent({ unit: '教全區', kind: '區活動' })] });
   assert.equal(r.error.code, 'BAD_REQUEST');
   assert.match(r.error.message, /第 2 筆/);
   r = await env.post({ action: 'adminBackup', token });

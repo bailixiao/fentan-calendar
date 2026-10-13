@@ -14,7 +14,7 @@
   }
 
   function editableUnits() {
-    return units || [window.SITE.fentan].concat(window.SITE.units.filter((u) => u !== window.SITE.jiaoquan.unit), window.SITE.testRegion);
+    return units || [window.SITE.fentan].concat(window.SITE.units, window.SITE.testRegion);
   }
 
   function busy(on, text) {
@@ -407,7 +407,7 @@
     const v = (k) => (raw && raw[k] !== undefined && raw[k] !== null ? String(raw[k]).trim() : '');
     const ev = { unit: v('unit'), category: v('category'), name: v('name'), start: v('start'), end: v('end') || v('start'), startTime: v('startTime'), endTime: v('endTime'), location: v('location'), note: v('note'), link: v('link'), kind: v('kind'), positions: Array.isArray(raw && raw.positions) ? raw.positions : [] };
     const errs = [];
-    if (ev.unit === window.SITE.jiaoquan.unit) errs.push('教全區的活動會自動讀進來，不用匯入');
+    if (ev.unit === window.SITE.jiaoquan.unit && ev.kind === '區活動') errs.push('教全區自己的活動會自動讀進來，不用匯入');
     else if (editableUnits().indexOf(ev.unit) === -1) errs.push('單位不對');
     if (window.SITE.categories.indexOf(ev.category) === -1) errs.push('類別要是勤務、道務、教育');
     if (!ev.name) errs.push('沒有名稱');

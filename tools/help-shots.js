@@ -94,7 +94,7 @@ const SHOTS = [
       const events = [
         { unit: '教美區', category: '教育', name: '教美區親子讀經（範例）', start: '2026-11-07', startTime: '09:30', endTime: '11:00', location: '教美區中心' },
         { unit: '教孝區', category: '道務', name: '教孝區研究班（範例）', start: '2026-11-10', startTime: '19:30', location: '教孝區佛堂' },
-        { unit: '教全區', category: '勤務', name: '教全區打掃（範例）', start: '2026-11-12' }
+        { unit: '教全區', kind: '區活動', category: '勤務', name: '教全區打掃（範例）', start: '2026-11-12' }
       ];
       const input = document.querySelector('.import-pick input');
       const dt = new DataTransfer();

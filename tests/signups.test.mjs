@@ -54,7 +54,10 @@ function setup() {
   const fentanEvents = [
     F({ id: 'E-1', unit: '分壇', kind: '', category: '道務', name: '統班' }),
     F({ id: 'E-3', unit: '教慈區', kind: '分壇分配', name: '烹飪：統班' }),
-    F({ id: 'E-4', unit: '教善區', kind: '分壇分配', name: '志工團：統班' })
+    F({ id: 'E-4', unit: '教善區', kind: '分壇分配', name: '志工團：統班' }),
+    F({ id: 'E-5', unit: '教全區', kind: '分壇分配', name: '志工團：統班' }), // 教全區系統已經有「…統班…」：不重複列
+    F({ id: 'E-6', unit: '分壇', kind: '', category: '道務', name: '明道班', start: '2026-10-25', end: '2026-10-25' }),
+    F({ id: 'E-7', unit: '教全區', kind: '分壇分配', name: '烹飪：明道班', start: '2026-10-25', end: '2026-10-25' }) // 教全區系統還沒有：提示
   ];
   const ok = (data) => ({ ok: true, json: async () => ({ ok: true, data }) });
   const fetchFn = async (url) => {
@@ -88,9 +91,9 @@ test('getCalendar：只有分壇的活動，掛著的各區勤務附那天報了
   const env = setup();
   const r = await env.get('action=getCalendar&from=2026-10-01&to=2026-10-31');
   assert.equal(r.ok, true, JSON.stringify(r));
-  assert.deepEqual(r.data.events.map((e) => e.name), ['統班']);
+  assert.deepEqual(r.data.events.map((e) => e.name), ['統班', '明道班']);
   assert.deepEqual(r.data.events[0].links.map((l) => [l.unit, l.name, l.counts['2026-10-24']]),
-    [['教善區', '志工團：統班', undefined], ['教慈區', '烹飪：統班', 2], ['教全區', '烹飪團輪值：統班烹飪', 4]]);
+    [['教善區', '志工團：統班', undefined], ['教慈區', '烹飪：統班', 2], ['教全區', '志工團：統班', undefined], ['教全區', '烹飪團輪值：統班烹飪', 4]]);
 });
 
 test('getLinked：各區的名單（只有名字）、還沒開放的區、教全區的名單', async () => {
@@ -110,6 +113,9 @@ test('getLinked：各區的名單（只有名字）、還沒開放的區、教�
   // test=1：不檢查開放，讓各區報名系統自己回「還沒開設」
   const t = await env.get('action=getLinked&id=E-1&date=2026-10-24&test=1');
   assert.equal(t.data.links[0].open, false);
+  assert.ok(!r.data.links.some((x) => x.source === 'local' && x.unit === '教全區'));
+  const mdb = await env.get('action=getLinked&id=E-6&date=2026-10-25');
+  assert.deepEqual(mdb.data.links, [{ unit: '教全區', name: '烹飪：明道班', source: 'local', open: false, hint: 'jiaoquan', key: '明道班' }]);
   const bad = await env.get('action=getLinked&id=E-404&date=2026-10-24');
   assert.equal(bad.error.code, 'NOT_FOUND');
 });

@@ -4,7 +4,7 @@
 //   - getCalendar：分壇行事曆畫面用（只有分壇的活動，各區的勤務掛在下面，附各區已報幾人）；getLinked：一個活動各區的名單（規格第 9-3 節）。
 //   - 管理動作（POST）：轉給 Durable Object。
 import { SITE } from './site.js';
-import { AppError, buildCalendar, checkRange, fromJiaoquan, inRange, isDate, signupDays, taipeiDate, yearsOf } from './logic.js';
+import { AppError, buildCalendar, checkRange, fromJiaoquan, inRange, isDate, parentKey, signupDays, taipeiDate, yearsOf } from './logic.js';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -198,8 +198,13 @@ export function createFront(opts) {
       try { open = new Set(((await regionGet({ action: 'regions' }, 120e3)).regions || []).map((r) => r.name)); } catch (e) { open = new Set(); }
     }
     const site = SITE.regionSystem.site;
-    const links = await Promise.all(item.links.map(async (l) => {
+    const onDay = item.links.filter((l) => l.start <= date && l.end >= date);
+    const jqThere = onDay.some((l) => l.source === 'jiaoquan');
+    // 派給教全區的：名單來自教全區系統裡同名的勤務；那邊已經有就不重複列，還沒有就提示教全區去建
+    const list = onDay.filter((l) => !(l.source === 'local' && l.unit === SITE.jiaoquan.unit && jqThere));
+    const links = await Promise.all(list.map(async (l) => {
       const base = { unit: l.unit, name: l.name, source: l.source };
+      if (l.source === 'local' && l.unit === SITE.jiaoquan.unit) return Object.assign(base, { open: false, hint: 'jiaoquan', key: item.source === 'group' ? item.name : parentKey(item.name) });
       try {
         if (l.source === 'jiaoquan') {
           const r = await getRoster(new URLSearchParams({ id: l.id }));
