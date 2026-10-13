@@ -7,6 +7,7 @@ export const SITE = {
   units: ['教真區', '教善區', '教美區', '教志區', '教孝區', '教仁區', '教勇區', '教定區',
     '教慧區', '教力區', '教發區', '教慈區', '教捨區', '教全區', '教振區', '教理區'],
   categories: ['勤務', '道務', '教育'],
+  testRegion: '測試區', // 只在後台出現：派勤務給各區報名系統的測試區，分壇行事曆上不顯示
   // 各區報名系統（第二階段）：分壇讀它的 feed（報名統計）
   regionSystem: {
     api: 'https://region-signup-api.duty-calendar-worker.workers.dev/',

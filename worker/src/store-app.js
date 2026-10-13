@@ -1,6 +1,6 @@
 // 在 Durable Object 裡執行的部分：手動活動的讀寫、管理者登入。所有請求依序處理，不會兩筆同時改。
 // call(body) 回傳 { ok: true, data } 或 { ok: false, error: { code, message } }。
-import { AppError, cleanEvent, newEventId, publicEvent, taipeiStamp, editableUnits } from './logic.js';
+import { AppError, cleanEvent, newEventId, publicEvent, taipeiDate, taipeiStamp, editableUnits } from './logic.js';
 import { createPushApp } from './push-app.js';
 
 const MAX_IMPORT = 300; // 一次最多匯入幾筆
@@ -78,9 +78,24 @@ export function createStoreApp(store, opts) {
     store.addLog({ time: taipeiStamp(now()), action, unit: ev.unit, name: ev.name, start: ev.start, end: ev.end, id: ev.id });
   }
 
+  const newPositionId = () => 'P-' + taipeiDate(now()).replace(/-/g, '') + '-' + randomHex(3);
+
   function adminSave(body) {
-    const clean = cleanEvent(body.event);
     const id = body.event && typeof body.event.id === 'string' ? body.event.id : '';
+    // 新增時可以一次派給好幾區（units）：每區各一筆，同一個批號（規格第 9-2 節）
+    const units = !id && body.event && Array.isArray(body.event.units) ? [...new Set(body.event.units.map(String))] : null;
+    if (units && units.length > 1) {
+      if (units.length > 17) throw new AppError('BAD_REQUEST', '單位太多了');
+      const positions = cleanEvent(Object.assign({}, body.event, { unit: units[0] }), newPositionId).positions; // 各區用同一組了愿項目代號
+      const cleaned = units.map((u) => Object.assign(cleanEvent(Object.assign({}, body.event, { unit: u, positions })), { positions }));
+      const stamp = taipeiStamp(now());
+      const batch = 'B-' + stamp.replace(/\D/g, '').slice(0, 14) + '-' + randomHex(2);
+      const list = cleaned.map((c) => Object.assign({ id: newEventId(now(), randomHex(4)) }, c, { batch, createdAt: stamp, updatedAt: stamp }));
+      list.forEach((ev) => store.putEvent(ev));
+      store.addLog({ time: stamp, action: '新增', unit: units.join('、'), name: list[0].name, start: list[0].start, end: list[0].end, batch });
+      return { event: list[0], events: list };
+    }
+    const clean = cleanEvent(units && units.length === 1 ? Object.assign({}, body.event, { unit: units[0] }) : body.event, newPositionId);
     const stamp = taipeiStamp(now());
     let saved;
     if (id) {

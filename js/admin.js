@@ -14,7 +14,7 @@
   }
 
   function editableUnits() {
-    return units || [window.SITE.fentan].concat(window.SITE.units.filter((u) => u !== window.SITE.jiaoquan.unit));
+    return units || [window.SITE.fentan].concat(window.SITE.units.filter((u) => u !== window.SITE.jiaoquan.unit), window.SITE.testRegion);
   }
 
   function busy(on, text) {
@@ -195,7 +195,7 @@
       <li class="admin-row">
         <div class="admin-row-main">
           <span class="admin-row-date">${Fmt.esc(when)}</span>
-          ${Fmt.tagsHtml(e)}
+          ${Fmt.tagsHtml(e)}${e.unit !== window.SITE.fentan ? `<span class="card-meta">${e.kind === '區活動' ? '區自己的活動（不帶到各區報名系統）' : '分壇分配' + (e.positions && e.positions.length ? '：' + e.positions.map((p) => Fmt.esc(p.name) + (p.max !== null ? ' 最多 ' + p.max : '')).join('、') : '')}</span>` : ''}
           <strong>${Fmt.esc(e.name)}</strong>
           ${meta && e.start === e.end ? `<span class="card-meta">${Fmt.esc(meta)}</span>` : e.location ? `<span class="card-meta">${Fmt.esc(e.location)}</span>` : ''}
         </div>
@@ -257,20 +257,42 @@
     return errs;
   }
 
+  // 新增／另存新的：單位可以選「分壇」或勾好幾區（每區各一筆）；修改：一次一筆（規格第 9-2 節）
   function renderForm(src, mode) {
-    const ev = src ? Object.assign({}, src) : { unit: filter.unit !== '全部' ? filter.unit : window.SITE.fentan, category: '勤務', start: CalendarPage.today() };
+    const ev = src ? JSON.parse(JSON.stringify(src)) : { unit: filter.unit !== '全部' ? filter.unit : window.SITE.fentan, category: '勤務', start: CalendarPage.today() };
+    if (mode === 'copy') ev.positions = (ev.positions || []).map((p) => ({ name: p.name, min: p.min, max: p.max }));
+    const multi = mode !== 'edit';
+    const fentan = window.SITE.fentan;
+    const regions = editableUnits().filter((u) => u !== fentan);
     const title = mode === 'edit' ? '修改活動' : mode === 'copy' ? '另存成新的活動' : '新增活動';
     const opt = (list, value, label) => list.map((v) => `<option value="${Fmt.esc(v)}"${v === value ? ' selected' : ''}>${Fmt.esc(label ? label(v) : v)}</option>`).join('');
+    const isRegion = ev.unit && ev.unit !== fentan;
+    const posRow = (p) => `
+      <div class="pos-row">
+        <input type="hidden" name="pid" value="${Fmt.esc(p.id || '')}">
+        <label><span>了愿項目</span><input class="input" name="pname" maxlength="20" value="${Fmt.esc(p.name || '')}" placeholder="例：烹飪"></label>
+        <label><span>最少</span><input class="input" name="pmin" inputmode="numeric" value="${p.min === null || p.min === undefined ? '' : p.min}" placeholder="空白"></label>
+        <label><span>最多</span><input class="input" name="pmax" inputmode="numeric" value="${p.max === null || p.max === undefined ? '' : p.max}" placeholder="不限"></label>
+        <button type="button" class="btn btn-small btn-quiet-danger" data-rm aria-label="拿掉這個項目">✕</button>
+      </div>`;
+    const unitBlock = multi ? `
+      <label class="radio-row"><input type="radio" name="scope" value="fentan"${isRegion ? '' : ' checked'}> 分壇自己的活動</label>
+      <label class="radio-row"><input type="radio" name="scope" value="regions"${isRegion ? ' checked' : ''}> 派給區（可以勾好幾區，每區各一筆）</label>
+      <div class="push-units unit-checks"${isRegion ? '' : ' hidden'}>${regions.map((u) => `<label class="check-chip"><input type="checkbox" name="units" value="${Fmt.esc(u)}"${u === ev.unit ? ' checked' : ''}> ${Fmt.esc(u)}</label>`).join('')}</div>`
+      : `<label class="form-row"><span>單位</span><select class="input" name="unit">${opt(editableUnits(), ev.unit)}</select></label>`;
     view.innerHTML = tabs(mode === 'new' ? 'new' : '') + `
       <form class="admin-form" novalidate>
         <h2 class="admin-sub">${title}</h2>
         ${mode === 'copy' ? '<p class="hint">從「' + Fmt.esc(src.name) + '」複製過來，改好日期再存，原本那筆不會變。</p>' : ''}
         <fieldset class="form-block">
           <legend>哪一個單位、哪一類</legend>
-          <div class="form-row-pair">
-            <label><span>單位</span><select class="input" name="unit">${opt(editableUnits(), ev.unit)}</select></label>
-            <label><span>類別</span><select class="input" name="category">${opt(window.SITE.categories, ev.category, Fmt.catLabel)}</select></label>
+          ${unitBlock}
+          <div class="kind-block">
+            <label class="radio-row"><input type="radio" name="kind" value="分壇分配"${ev.kind !== '區活動' ? ' checked' : ''}> 分壇分配的勤務（會帶到各區報名系統讓家人報名）</label>
+            <label class="radio-row"><input type="radio" name="kind" value="區活動"${ev.kind === '區活動' ? ' checked' : ''}> 區自己的活動（只記在分壇行事曆上）</label>
           </div>
+          <label class="form-row"><span>類別</span><select class="input" name="category">${opt(window.SITE.categories, ev.category, Fmt.catLabel)}</select></label>
+          <p class="hint">「${Fmt.esc(window.SITE.testRegion)}」只在後台出現，用來試各區報名系統的連動，行事曆上不顯示。</p>
         </fieldset>
         <fieldset class="form-block">
           <legend>活動</legend>
@@ -287,6 +309,12 @@
           <label class="form-row"><span>說明（可以不填）</span><textarea class="input textarea" name="note" rows="4" maxlength="1000">${Fmt.esc(ev.note || '')}</textarea></label>
           <label class="form-row"><span>相關連結（可以不填，要 https:// 開頭）</span><input class="input" type="url" name="link" maxlength="500" value="${Fmt.esc(ev.link || '')}" placeholder="https://"></label>
         </fieldset>
+        <fieldset class="form-block pos-block">
+          <legend>了愿項目與名額（各區報名用，可以不填）</legend>
+          <p class="hint">不填：各區報名時是一個「參加」、不限人數。「最少」留空：勤務預設 2 人。「最多」留空＝不限，到了就額滿。</p>
+          <div class="pos-list">${(ev.positions || []).map(posRow).join('')}</div>
+          <button type="button" class="btn" data-act="add-pos">＋ 加一個了愿項目</button>
+        </fieldset>
         <p class="form-error" hidden></p>
         <button type="submit" class="btn btn-primary btn-block">${mode === 'edit' ? '儲存修改' : '新增'}</button>
         <a class="btn btn-block back-btn" href="#/admin">取消</a>
@@ -294,14 +322,48 @@
     bindCommon();
     const form = view.querySelector('form');
     const errBox = form.querySelector('.form-error');
+    const sync = () => {
+      const region = multi ? form.querySelector('[name="scope"]:checked').value === 'regions' : form.unit.value !== fentan;
+      if (multi) form.querySelector('.unit-checks').hidden = !region;
+      form.querySelector('.kind-block').hidden = !region;
+      form.querySelector('.pos-block').hidden = !region || form.querySelector('[name="kind"]:checked').value !== '分壇分配';
+    };
+    sync();
+    form.addEventListener('change', sync);
+    form.addEventListener('click', (e) => {
+      const b = e.target.closest('button');
+      if (!b) return;
+      if (b.dataset.act === 'add-pos') {
+        const list = form.querySelector('.pos-list');
+        if (list.children.length < 10) list.insertAdjacentHTML('beforeend', posRow({}));
+      }
+      if (b.hasAttribute('data-rm')) b.closest('.pos-row').remove();
+    });
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const f = new FormData(form);
       const data = {};
-      ['unit', 'category', 'name', 'start', 'end', 'startTime', 'endTime', 'location', 'note', 'link'].forEach((k) => { data[k] = String(f.get(k) || '').trim(); });
+      ['category', 'name', 'start', 'end', 'startTime', 'endTime', 'location', 'note', 'link'].forEach((k) => { data[k] = String(f.get(k) || '').trim(); });
       if (!data.end) data.end = data.start;
+      const errs = [];
+      if (multi) {
+        if (f.get('scope') === 'regions') {
+          data.units = f.getAll('units').map(String);
+          if (!data.units.length) errs.push('請勾選要派給哪幾區');
+          data.unit = data.units[0] || '';
+        } else data.unit = fentan;
+      } else data.unit = String(f.get('unit'));
+      if (data.unit !== fentan) {
+        data.kind = String(f.get('kind') || '分壇分配');
+        data.positions = data.kind === '分壇分配' ? [...form.querySelectorAll('.pos-row')].map((r) => ({
+          id: r.querySelector('[name="pid"]').value || undefined,
+          name: r.querySelector('[name="pname"]').value.trim(),
+          min: r.querySelector('[name="pmin"]').value.trim(),
+          max: r.querySelector('[name="pmax"]').value.trim()
+        })) : [];
+      }
       if (mode === 'edit') data.id = src.id;
-      const errs = check(data);
+      errs.push(...check(data));
       if (errs.length) {
         errBox.textContent = errs.join('；');
         errBox.hidden = false;
@@ -313,8 +375,10 @@
       try {
         const res = await Api.admin('adminSave', { event: data });
         busy(false);
+        const saved = res.events || [res.event];
         if (events) {
-          events = events.filter((x) => x.id !== res.event.id).concat(res.event)
+          const ids = new Set(saved.map((x) => x.id));
+          events = events.filter((x) => !ids.has(x.id)).concat(saved)
             .sort((a, b) => a.start.localeCompare(b.start) || (a.startTime || '').localeCompare(b.startTime || ''));
         }
         CalendarPage.refresh(true);
@@ -344,7 +408,7 @@
   /** 匯入的一筆：整理欄位並檢查（和伺服器同樣的規則，伺服器還會再檢查一次） */
   function checkImportRow(raw) {
     const v = (k) => (raw && raw[k] !== undefined && raw[k] !== null ? String(raw[k]).trim() : '');
-    const ev = { unit: v('unit'), category: v('category'), name: v('name'), start: v('start'), end: v('end') || v('start'), startTime: v('startTime'), endTime: v('endTime'), location: v('location'), note: v('note'), link: v('link') };
+    const ev = { unit: v('unit'), category: v('category'), name: v('name'), start: v('start'), end: v('end') || v('start'), startTime: v('startTime'), endTime: v('endTime'), location: v('location'), note: v('note'), link: v('link'), kind: v('kind'), positions: Array.isArray(raw && raw.positions) ? raw.positions : [] };
     const errs = [];
     if (ev.unit === window.SITE.jiaoquan.unit) errs.push('教全區的活動會自動讀進來，不用匯入');
     else if (editableUnits().indexOf(ev.unit) === -1) errs.push('單位不對');

@@ -36,9 +36,42 @@ export function daysBetween(a, b) {
   return Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400e3);
 }
 
-/** 可以在後台手動新增的單位：分壇＋各區（教全區除外，它的活動自動讀進來） */
+/** 可以在後台手動新增的單位：分壇＋各區（教全區除外，它的活動自動讀進來）＋測試區（只在後台） */
 export function editableUnits() {
-  return [SITE.fentan].concat(SITE.units.filter((u) => u !== SITE.jiaoquan.unit));
+  return [SITE.fentan].concat(SITE.units.filter((u) => u !== SITE.jiaoquan.unit), SITE.testRegion);
+}
+
+export const KINDS = ['分壇分配', '區活動']; // 單位是某一區時：分壇分配（帶到各區報名系統）／區活動（只記在分壇行事曆）
+const MAX_POSITIONS = 10;
+
+function intOrNull(v, label, errs) {
+  if (v === '' || v === null || v === undefined) return null;
+  const n = Number(v);
+  if (!Number.isInteger(n) || n < 0 || n > 999) { errs.push(`${label}要是 0～999 的整數`); return null; }
+  return n;
+}
+
+/** 了愿項目與名額（選填，規則同各區報名系統）：沿用舊的 id，新的給新 id */
+function cleanPositions(list, newId, errs) {
+  const out = [];
+  if (!Array.isArray(list)) return out;
+  if (list.length > MAX_POSITIONS) errs.push(`了愿項目最多 ${MAX_POSITIONS} 個`);
+  const names = new Set();
+  list.slice(0, MAX_POSITIONS).forEach((p, i) => {
+    const name = str(p && p.name);
+    if (!name && !str(p && p.min) && !str(p && p.max)) return; // 整列空白：略過
+    if (!name) { errs.push(`第 ${i + 1} 個了愿項目沒有名稱`); return; }
+    if (name.length > 20) errs.push(`了愿項目「${name}」名稱最多 20 字`);
+    if (names.has(name)) errs.push(`了愿項目「${name}」重複了`);
+    names.add(name);
+    const min = intOrNull(p.min, `「${name}」的最少人數`, errs);
+    const max = intOrNull(p.max, `「${name}」的最多人數`, errs);
+    if (min !== null && max !== null && max < min) errs.push(`「${name}」的最多人數不能少於最少人數`);
+    if (max === 0) errs.push(`「${name}」的最多人數不能是 0`);
+    const id = typeof p.id === 'string' && /^P-[\w-]{1,40}$/.test(p.id) ? p.id : newId();
+    out.push({ id, name, min, max });
+  });
+  return out;
 }
 
 function str(v) {
@@ -48,8 +81,9 @@ function str(v) {
 /**
  * 檢查並整理後台送來的活動。回傳只含允許欄位的新物件；有錯丟 AppError('BAD_REQUEST')，訊息列出所有問題。
  */
-export function cleanEvent(input) {
+export function cleanEvent(input, newId) {
   if (!input || typeof input !== 'object') throw new AppError('BAD_REQUEST', '活動資料格式錯誤');
+  const makeId = newId || (() => 'P-' + Math.random().toString(16).slice(2, 10));
   const ev = {
     unit: str(input.unit),
     category: str(input.category),
@@ -63,6 +97,12 @@ export function cleanEvent(input) {
     link: str(input.link)
   };
   const errs = [];
+  // 單位是某一區：分壇分配（預設）或區活動；了愿項目選填
+  if (ev.unit && ev.unit !== SITE.fentan) {
+    ev.kind = str(input.kind) || KINDS[0];
+    if (KINDS.indexOf(ev.kind) === -1) errs.push('種類要是「分壇分配」或「區活動」');
+  }
+  ev.positions = cleanPositions(input.positions, makeId, errs);
   if (editableUnits().indexOf(ev.unit) === -1) {
     errs.push(ev.unit === SITE.jiaoquan.unit ? '教全區的活動會自動從教全區的系統讀進來，不用在這裡新增' : '請選擇單位');
   }
@@ -95,7 +135,9 @@ export function publicEvent(ev) {
   return {
     id: ev.id, source: 'local', unit: ev.unit, category: ev.category, name: ev.name,
     start: ev.start, end: ev.end, startTime: ev.startTime || '', endTime: ev.endTime || '',
-    location: ev.location || '', note: ev.note || '', link: ev.link || ''
+    location: ev.location || '', note: ev.note || '', link: ev.link || '',
+    kind: ev.unit === SITE.fentan ? '' : ev.kind || KINDS[0],
+    positions: Array.isArray(ev.positions) ? ev.positions : []
   };
 }
 

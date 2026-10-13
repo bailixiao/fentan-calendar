@@ -66,7 +66,8 @@ test('區名：16 區、教全區在裡面、後台不能選教全區', () => {
   assert.ok(SITE.units.includes('教全區'));
   assert.equal(editableUnits()[0], '分壇');
   assert.ok(!editableUnits().includes('教全區'));
-  assert.equal(editableUnits().length, 16);
+  assert.equal(editableUnits().length, 17); // 分壇＋15 區＋測試區
+  assert.equal(editableUnits()[16], '測試區');
 });
 
 test('cleanEvent：整理欄位、結束日期預設同一天', () => {
@@ -336,4 +337,37 @@ test('教全區名單：只留項目、日期、名字（陪同也不讀）', ()
     signups: [{ id: 'S1', date: '2026-10-24', positionId: 'P1', name: '王小明', temple: '某佛堂', accompany: true, leader: true, note: '電話 0900-000-000' }, { date: 'bad', positionId: 'P1', name: 'x' }] });
   assert.deepEqual(r, { id: 'jq-D-1', positions: [{ id: 'P1', name: '打掃' }], signups: [{ date: '2026-10-24', positionId: 'P1', name: '王小明' }] });
   assert.ok(!JSON.stringify(r).includes('測試甲') && !JSON.stringify(r).includes('0900') && !JSON.stringify(r).includes('佛堂'));
+});
+
+test('分壇分配：種類、了愿項目、一次派給好幾區、測試區（規格第 9-2 節）', async () => {
+  const env = setup();
+  const token = await login(env);
+  // 一次派給三區：每區一筆、同一批、同一組了愿項目代號
+  let r = await env.post({ action: 'adminSave', token, event: { units: ['教真區', '教善區', '測試區'], category: '勤務', name: '統班烹飪', start: '2026-10-24', positions: [{ name: '烹飪', min: 15, max: '' }, { name: '', min: '', max: '' }] } });
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.data.events.length, 3);
+  assert.deepEqual(r.data.events.map((e) => e.unit), ['教真區', '教善區', '測試區']);
+  assert.equal(new Set(r.data.events.map((e) => e.batch)).size, 1);
+  assert.deepEqual(r.data.events[0].positions.map(({ name, min, max }) => ({ name, min, max })), [{ name: '烹飪', min: 15, max: null }]);
+  assert.equal(r.data.events[0].positions[0].id, r.data.events[2].positions[0].id);
+  assert.ok(r.data.events.every((e) => e.kind === '分壇分配'));
+  // 公開的 getEvents 帶 kind、positions；分壇自己的活動沒有 kind
+  await env.post({ action: 'adminSave', token, event: sampleEvent({ start: '2026-10-24' }) });
+  await env.post({ action: 'adminSave', token, event: { unit: '教美區', kind: '區活動', category: '道務', name: '研究班（範例）', start: '2026-10-24' } });
+  const pub = (await env.get('action=getEvents&from=2026-10-24&to=2026-10-24')).data.events.filter((e) => e.source === 'local');
+  const byName = (n, u) => pub.find((e) => e.name === n && (!u || e.unit === u));
+  assert.equal(byName('統班烹飪', '教真區').kind, '分壇分配');
+  assert.equal(byName('統班烹飪', '教真區').positions[0].min, 15);
+  assert.equal(byName('分壇法會').kind, '');
+  assert.equal(byName('研究班（範例）').kind, '區活動');
+  // 錯誤：種類不對、了愿項目最多少於最少
+  r = await env.post({ action: 'adminSave', token, event: { unit: '教美區', kind: '別的', category: '道務', name: 'x', start: '2026-10-24' } });
+  assert.match(r.error.message, /種類/);
+  r = await env.post({ action: 'adminSave', token, event: { unit: '教美區', category: '道務', name: 'x', start: '2026-10-24', positions: [{ name: 'a', min: 3, max: 2 }] } });
+  assert.match(r.error.message, /不能少於最少/);
+  // 修改時保留了愿項目代號
+  const one = byName('統班烹飪', '教真區');
+  r = await env.post({ action: 'adminSave', token, event: Object.assign({}, one, { positions: one.positions.concat({ name: '洗碗', max: 3 }) }) });
+  assert.equal(r.data.event.positions[0].id, one.positions[0].id);
+  assert.equal(r.data.event.positions.length, 2);
 });
