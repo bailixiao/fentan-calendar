@@ -287,10 +287,7 @@
         <fieldset class="form-block">
           <legend>哪一個單位、哪一類</legend>
           ${unitBlock}
-          <div class="kind-block">
-            <label class="radio-row"><input type="radio" name="kind" value="分壇分配"${ev.kind !== '區活動' ? ' checked' : ''}> 分壇分配的勤務（會帶到各區報名系統讓家人報名）</label>
-            <label class="radio-row"><input type="radio" name="kind" value="區活動"${ev.kind === '區活動' ? ' checked' : ''}> 區自己的活動（只記在分壇行事曆上）</label>
-          </div>
+          ${ev.kind === '區活動' ? '<p class="hint kind-note">這筆是「區自己的活動」（例如範例資料），只記在分壇行事曆上，不會帶到各區報名系統。</p>' : '<p class="hint kind-note">派給區的是「分壇分配的勤務」，會帶到各區報名系統讓家人報名。</p>'}
           <label class="form-row"><span>類別</span><select class="input" name="category">${opt(window.SITE.categories, ev.category, Fmt.catLabel)}</select></label>
           <p class="hint">「${Fmt.esc(window.SITE.testRegion)}」只在後台出現，用來試各區報名系統的連動，行事曆上不顯示。</p>
         </fieldset>
@@ -325,8 +322,8 @@
     const sync = () => {
       const region = multi ? form.querySelector('[name="scope"]:checked').value === 'regions' : form.unit.value !== fentan;
       if (multi) form.querySelector('.unit-checks').hidden = !region;
-      form.querySelector('.kind-block').hidden = !region;
-      form.querySelector('.pos-block').hidden = !region || form.querySelector('[name="kind"]:checked').value !== '分壇分配';
+      form.querySelector('.kind-note').hidden = !region;
+      form.querySelector('.pos-block').hidden = !region || ev.kind === '區活動';
     };
     sync();
     form.addEventListener('change', sync);
@@ -354,7 +351,7 @@
         } else data.unit = fentan;
       } else data.unit = String(f.get('unit'));
       if (data.unit !== fentan) {
-        data.kind = String(f.get('kind') || '分壇分配');
+        data.kind = ev.kind === '區活動' ? '區活動' : '分壇分配'; // 後台派給區的一律是分壇分配；範例資料（區活動）修改時維持原樣
         data.positions = data.kind === '分壇分配' ? [...form.querySelectorAll('.pos-row')].map((r) => ({
           id: r.querySelector('[name="pid"]').value || undefined,
           name: r.querySelector('[name="pname"]').value.trim(),
