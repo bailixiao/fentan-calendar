@@ -11,7 +11,8 @@ const CORS = {
   'Access-Control-Allow-Headers': 'Content-Type'
 };
 const MAX_BODY = 400000; // 批次匯入最多 300 筆
-const PUBLIC_POST = { adminLogin: 1, adminLogout: 1, adminList: 1, adminSave: 1, adminDelete: 1, adminImport: 1, adminDeleteBatch: 1, adminLog: 1, adminBackup: 1 };
+const PUBLIC_POST = { adminLogin: 1, adminLogout: 1, adminList: 1, adminSave: 1, adminDelete: 1, adminImport: 1, adminDeleteBatch: 1, adminLog: 1, adminBackup: 1,
+  pushSubscribe: 1, pushUnsubscribe: 1, pushTest: 1, adminPushStats: 1, adminPushList: 1, adminPushSend: 1, adminPushCancel: 1 };
 
 function json(obj, status) {
   return new Response(JSON.stringify(obj), {
@@ -37,6 +38,8 @@ export function createFront(opts) {
   const localTtl = opts.localTtl !== undefined ? opts.localTtl : 60e3;
   const jqTtl = opts.jqTtl !== undefined ? opts.jqTtl : 300e3;
   const jqTimeout = opts.jqTimeout || 8000;
+
+  let pushKey = null;
 
   // ---------- 手動活動：整份快取 60 秒 ----------
   const local = { at: 0, events: null, promise: null };
@@ -129,6 +132,12 @@ export function createFront(opts) {
         const waitUntil = ctx && ctx.waitUntil ? (p) => ctx.waitUntil(p) : null;
         if (action === 'getEvents') return json({ ok: true, data: await getEvents(url.searchParams, waitUntil) });
         if (action === 'ping') return json({ ok: true, data: { today: taipeiDate(now()) } });
+        // 手機提醒：公鑰（不會變，記在這個 Worker）、手機收到推播後來問要顯示什麼
+        if (action === 'pushKey') {
+          if (!pushKey) pushKey = await storeCall({ action: 'pushKey' });
+          return json({ ok: true, data: pushKey });
+        }
+        if (action === 'pushSummary') return json(await opts.callStore({ action: 'pushSummary', id: url.searchParams.get('id') || '' }));
         throw new AppError('BAD_REQUEST', '未知的 action：' + (action.slice(0, 30) || '（空白）'));
       }
       if (request.method !== 'POST') throw new AppError('BAD_REQUEST', '不支援的方法');

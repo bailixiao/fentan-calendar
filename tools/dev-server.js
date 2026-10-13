@@ -44,15 +44,22 @@ async function startMock() {
   const { createFront } = await import('../worker/src/front.js');
   const { createStoreApp } = await import('../worker/src/store-app.js');
   const { createMemoryStore } = await import('../worker/src/store.js');
-  const storeApp = createStoreApp(createMemoryStore(), { password: () => 'test-pass' });
-  const front = createFront({
-    callStore: (body) => storeApp.call(body),
-    fetch: async (url) => {
+  // 假的對外連線：教全區給假資料；推播不真的送（只印出來）
+  const fakeFetch = async (url) => {
+    if (url.startsWith('https://duty-calendar-api')) {
       const year = Number(new URL(url).searchParams.get('from').slice(0, 4));
       return { ok: true, json: async () => fakeJiaoquan(year) };
-    },
-    localTtl: 0
+    }
+    console.log('（假）送推播', url.slice(0, 60));
+    return { ok: true, status: 201, json: async () => ({}) };
+  };
+  let alarmTimer = null;
+  const storeApp = createStoreApp(createMemoryStore(), {
+    password: () => 'test-pass',
+    fetch: fakeFetch,
+    setAlarm: (ms) => { clearTimeout(alarmTimer); alarmTimer = setTimeout(() => storeApp.alarm(), Math.max(0, ms - Date.now())); }
   });
+  const front = createFront({ callStore: (body) => storeApp.call(body), fetch: fakeFetch, localTtl: 0 });
   // 示範活動
   const token = (await storeApp.call({ action: 'adminLogin', password: 'test-pass' })).data.token;
   const demo = [

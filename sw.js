@@ -8,7 +8,7 @@
 // 同一個網域（bailixiao.github.io）底下有好幾個網站（教全區、書槑子⋯），手機裡的快取是共用的：
 // 快取名稱帶上這個網站的路徑，清舊快取時只清自己的，不會清掉別的網站的。
 const PREFIX = 'fentan-calendar:' + new URL('./', self.location).pathname + ':';
-const CACHE = PREFIX + 'v1';
+const CACHE = PREFIX + 'v2';
 const CDN_HOSTS = ['cdn.jsdelivr.net', 'fonts.googleapis.com', 'fonts.gstatic.com'];
 
 self.addEventListener('install', () => self.skipWaiting());
@@ -93,3 +93,52 @@ function withTimeout(promise, ms) {
     promise.then((r) => { clearTimeout(t); resolve(r); }, (e) => { clearTimeout(t); reject(e); });
   });
 }
+
+// ---------- 手機提醒（規格第 10-1 節） ----------
+// 推播本身不帶內容：收到後用這支手機的代號（推播網址 SHA-256 前 16 碼）回伺服器問要顯示什麼。
+
+self.window = self; // site.js、config.js 寫的是 window.SITE、window.APP_CONFIG
+try { importScripts('js/site.js', 'js/config.js'); } catch (e) { /* 讀不到就用通用通知 */ }
+
+async function pushId(endpoint) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(endpoint));
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 16);
+}
+
+async function buildNotification() {
+  const fallback = { title: '🙏 ' + ((self.SITE && self.SITE.name) || '行事曆'), body: '有新的提醒，點開看看 😊', url: '#/' };
+  try {
+    const sub = await self.registration.pushManager.getSubscription();
+    const api = self.APP_CONFIG && self.APP_CONFIG.API_URL;
+    if (!sub || !api) return fallback;
+    const res = await fetch(api + (api.indexOf('?') === -1 ? '?' : '&') + 'action=pushSummary&id=' + await pushId(sub.endpoint));
+    const json = await res.json();
+    return json.ok && json.data.message ? json.data.message : fallback;
+  } catch (e) {
+    return fallback;
+  }
+}
+
+self.addEventListener('push', (ev) => {
+  ev.waitUntil(buildNotification().then((n) => self.registration.showNotification(n.title, {
+    body: n.body,
+    icon: 'icons/icon-192.png',
+    badge: 'icons/favicon-32.png',
+    tag: 'fentan-' + Date.now(),
+    data: { url: n.url || '#/' }
+  })));
+});
+
+self.addEventListener('notificationclick', (ev) => {
+  ev.notification.close();
+  const url = new URL((ev.notification.data && ev.notification.data.url) || '#/', self.registration.scope).href;
+  ev.waitUntil((async () => {
+    const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const win = wins.find((w) => w.url.startsWith(self.registration.scope));
+    if (win) {
+      await win.focus();
+      return win.navigate ? win.navigate(url) : null;
+    }
+    return self.clients.openWindow(url);
+  })());
+});

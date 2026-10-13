@@ -668,3 +668,29 @@ select.input { appearance: auto; }
 .imp-state.is-bad { color: var(--accent); font-weight: 700; }
 .imp-state.is-dup { color: var(--muted); }
 .import-batches-title { margin-top: 28px; }
+
+/* ---------- 手機提醒 ---------- */
+
+.push-open { margin: 0 0 12px; font-weight: 700; }
+.push-open.is-on { border-color: #4d6b4f; color: #34513a; background: #eef3ec; }
+.push-panel { margin: -4px 0 12px; padding: 12px 14px 14px; background: var(--card); border: 1px solid var(--accent); border-radius: var(--radius); }
+.push-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.push-head h2 { margin: 0; font-family: var(--serif); font-size: 1.15rem; }
+.push-body p { margin: 8px 0; }
+.push-unit { display: grid; gap: 6px; margin: 8px 0; }
+.push-unit > span { font-weight: 700; }
+.push-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+.push-msg { padding: 8px 12px; border-radius: var(--radius); background: var(--paper-2); }
+.push-msg.is-ok { background: #e4ebe1; color: #34513a; }
+.push-msg.is-error { background: var(--accent-soft); color: var(--accent); }
+.radio-row { display: flex; align-items: center; gap: 10px; min-height: var(--tap); cursor: pointer; }
+.radio-row input { width: 20px; height: 20px; accent-color: var(--accent); }
+.push-units { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 6px; }
+.check-chip { display: flex; align-items: center; gap: 6px; min-height: 44px; white-space: nowrap; padding: 0 10px; border: 1px solid var(--line); border-radius: var(--radius); background: #fff; cursor: pointer; }
+.check-chip input { width: 18px; height: 18px; accent-color: var(--accent); }
+.check-chip small { margin-left: auto; color: var(--muted); }
+.push-status { font-size: .85rem; font-weight: 700; padding: 1px 8px; border-radius: 999px; background: var(--paper-2); color: var(--ink-2); }
+.push-status.is-排定 { background: var(--gold-soft); color: #6e4c0c; }
+.push-status.is-已送出 { background: #e4ebe1; color: #34513a; }
+.push-status.is-已取消 { opacity: .6; }
+.push-body-text { margin: 4px 0; color: var(--ink-2); }

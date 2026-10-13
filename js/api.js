@@ -123,6 +123,11 @@
   window.Api = {
     ApiError,
     getEvents: (from, to, fresh) => get('getEvents', Object.assign({ from, to }, fresh ? { fresh: '1' } : {})),
+    // 手機提醒：只送推播網址和單位，沒有名字
+    pushKey: () => get('pushKey', {}),
+    pushSubscribe: (endpoint, unit) => post({ action: 'pushSubscribe', endpoint, unit }),
+    pushUnsubscribe: (endpoint) => post({ action: 'pushUnsubscribe', endpoint }),
+    pushTest: (endpoint) => post({ action: 'pushTest', endpoint }),
     admin,
     adminLogin,
     adminLogout,

@@ -100,7 +100,22 @@ const SHOTS = [
       const dt = new DataTransfer();
       dt.items.add(new File([JSON.stringify({ title: '十一月各區活動（範例）', events })], 'example.json', { type: 'application/json' }));
       input.files = dt.files; input.dispatchEvent(new Event('change')); await __wait(800);`,
-    clip: `await __wait(800); scrollTo({ top: 0, behavior: 'instant' }); return __box('.admin-sub', '.imp-list');` }
+    clip: `await __wait(800); scrollTo({ top: 0, behavior: 'instant' }); return __box('.admin-sub', '.imp-list');` },
+  { name: 'push', hash: '#/', js: `
+      window.__pushDemo = true;
+      const s = document.getElementById('unit-filter'); s.value = '教真區'; s.dispatchEvent(new Event('change'));
+      document.getElementById('push-open').click(); await __wait(500);`,
+    clip: `return __box('#push-open', '#push-panel');` },
+  { name: 'admin-push', hash: '#/admin/push', js: `
+      if (document.querySelector('.admin-login')) {
+        const f = document.querySelector('.admin-login'); f.password.value = 'test-pass'; f.requestSubmit(); await __wait(800);
+        location.hash = '#/admin/push'; await __wait(900);
+      }
+      const f = document.querySelector('#view-admin form');
+      f.title.value = '統班改地點（範例）'; f.body.value = '這週日的統班改在彌勒山，時間不變 🙏';
+      f.querySelector('[name=who][value=pick]').checked = true; f.dispatchEvent(new Event('change'));
+      f.querySelector('[name=unit][value="教善區"]').checked = true; await __wait(300);`,
+    clip: `return __box('.admin-sub', '#view-admin form button[type=submit]');` }
 ];
 
 async function main() {

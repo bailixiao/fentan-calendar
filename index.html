@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/app.css?v=20261013c">
+  <link rel="stylesheet" href="css/app.css?v=20261013g">
   <script>try { var t = localStorage.getItem('fentan-calendar:text-size'); if (t === 'l' || t === 'xl') document.documentElement.classList.add('text-' + t); } catch (e) {}</script>
 </head>
 <body>
@@ -52,6 +52,12 @@
           <input type="checkbox" id="with-fentan"> 也顯示分壇的活動
         </label>
       </div>
+
+      <button type="button" class="btn btn-block push-open" id="push-open" aria-expanded="false" aria-controls="push-panel">🔔 手機提醒</button>
+      <section id="push-panel" class="push-panel" hidden aria-label="手機提醒">
+        <div class="push-head"><h2>🔔 手機提醒</h2><button type="button" class="link-btn" data-act="close">收起</button></div>
+        <div class="push-body"></div>
+      </section>
 
       <div id="cal-status" class="status" role="status" hidden></div>
       <p id="source-status" class="status status-warn" role="status" hidden></p>
@@ -90,15 +96,16 @@
   <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.21/index.global.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@fullcalendar/core@6.1.21/locales/zh-tw.global.min.js"></script>
   <!-- 改了 js、css 後把 ?v= 的日期換新，手機才不會用到舊的檔案（GitHub Pages 會快取 10 分鐘） -->
-  <script src="js/site.js?v=20261013c"></script>
-  <script src="js/config.js?v=20261013c"></script>
-  <script src="js/api.js?v=20261013c"></script>
-  <script src="js/format.js?v=20261013c"></script>
-  <script src="js/lunar-util.js?v=20261013c"></script>
-  <script src="js/calendar.js?v=20261013c"></script>
-  <script src="js/event-page.js?v=20261013c"></script>
-  <script src="js/help.js?v=20261013c"></script>
-  <script src="js/admin.js?v=20261013c"></script>
-  <script src="js/app.js?v=20261013c"></script>
+  <script src="js/site.js?v=20261013g"></script>
+  <script src="js/config.js?v=20261013g"></script>
+  <script src="js/api.js?v=20261013g"></script>
+  <script src="js/format.js?v=20261013g"></script>
+  <script src="js/lunar-util.js?v=20261013g"></script>
+  <script src="js/calendar.js?v=20261013g"></script>
+  <script src="js/event-page.js?v=20261013g"></script>
+  <script src="js/help.js?v=20261013g"></script>
+  <script src="js/push.js?v=20261013g"></script>
+  <script src="js/admin.js?v=20261013g"></script>
+  <script src="js/app.js?v=20261013g"></script>
 </body>
 </html>

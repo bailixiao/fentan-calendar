@@ -59,6 +59,7 @@
     document.title = window.SITE.name;
     initTextSize();
     CalendarPage.init();
+    PushPage.init();
     window.addEventListener('hashchange', route);
     route();
     // 本機預覽（localhost）不註冊，避免改了檔案還看到舊的

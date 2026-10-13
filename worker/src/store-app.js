@@ -1,6 +1,7 @@
 // 在 Durable Object 裡執行的部分：手動活動的讀寫、管理者登入。所有請求依序處理，不會兩筆同時改。
 // call(body) 回傳 { ok: true, data } 或 { ok: false, error: { code, message } }。
 import { AppError, cleanEvent, newEventId, publicEvent, taipeiStamp, editableUnits } from './logic.js';
+import { createPushApp } from './push-app.js';
 
 const MAX_IMPORT = 300; // 一次最多匯入幾筆
 const SESSION_TTL_MS = 12 * 3600e3; // 登入 12 小時有效
@@ -23,6 +24,8 @@ function randomHex(bytes) {
  * @param store createSqlStore / createMemoryStore
  * @param opts.password () => 管理密碼（Worker secret ADMIN_PASSWORD）
  * @param opts.now () => 現在的毫秒（測試可以換）
+ * @param opts.fetch 對外連線（手機提醒、讀教全區）
+ * @param opts.setAlarm (ms) => void（Durable Object 的 alarm，分批送通知用）
  */
 export function createStoreApp(store, opts) {
   const now = opts.now || (() => Date.now());
@@ -152,6 +155,14 @@ export function createStoreApp(store, opts) {
     store.addLog({ time: taipeiStamp(now()), action, unit: units.join('、'), name: `${list.length} 筆活動`, start: starts[0], end: ends[ends.length - 1], batch });
   }
 
+  const push = createPushApp(store, {
+    now,
+    fetch: opts.fetch || ((...a) => fetch(...a)),
+    setAlarm: opts.setAlarm || (() => {}),
+    localEvents: () => store.allEvents().map(publicEvent),
+    log: (action, e) => store.addLog(Object.assign({ time: taipeiStamp(now()), action }, e))
+  });
+
   const sortEvents = (list) => list.sort((a, b) => a.start.localeCompare(b.start) || (a.startTime || '').localeCompare(b.startTime || ''));
 
   const actions = {
@@ -165,14 +176,16 @@ export function createStoreApp(store, opts) {
     adminImport,
     adminDeleteBatch,
     adminLog: () => ({ log: store.listLog(200) }),
-    adminBackup: () => ({ exportedAt: taipeiStamp(now()), events: sortEvents(store.allEvents()), log: store.listLog(2000) })
+    adminBackup: () => ({ exportedAt: taipeiStamp(now()), events: sortEvents(store.allEvents()), log: store.listLog(2000) }),
+    ...push.actions
   };
-  const needsLogin = { adminList: 1, adminSave: 1, adminDelete: 1, adminImport: 1, adminDeleteBatch: 1, adminLog: 1, adminBackup: 1 };
+  const needsLogin = Object.assign({ adminList: 1, adminSave: 1, adminDelete: 1, adminImport: 1, adminDeleteBatch: 1, adminLog: 1, adminBackup: 1 }, push.needsLogin);
 
   async function call(body) {
     try {
       const fn = body && actions[body.action];
       if (!fn) throw new AppError('BAD_REQUEST', '未知的 action：' + (body && body.action ? String(body.action).slice(0, 30) : '（空白）'));
+      push.ensureDaily();
       if (needsLogin[body.action]) await requireAdmin(body);
       return { ok: true, data: await fn(body) };
     } catch (err) {
@@ -182,5 +195,7 @@ export function createStoreApp(store, opts) {
     }
   }
 
-  return { call };
+  // cron（每日提醒）、alarm（分批送）：錯誤只記 log，不丟出去
+  const quiet = (fn) => async (...a) => { try { return await fn(...a); } catch (err) { console.error(err); return null; } };
+  return { call, enqueueDaily: quiet(push.enqueueDaily), alarm: quiet(push.alarm) };
 }

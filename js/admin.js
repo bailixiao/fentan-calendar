@@ -1,4 +1,4 @@
-// 管理後台（#/admin）：登入、活動列表、新增／修改／另存新的／刪除、批次匯入（可整批刪除）、操作紀錄、下載備份。
+// 管理後台（#/admin）：登入、活動列表、新增／修改／另存新的／刪除、批次匯入（可整批刪除）、發通知（手機提醒）、操作紀錄、下載備份。
 // 只能改分壇與各區手動輸入的活動；教全區的活動自動讀進來，不在這裡改。權限由伺服器檢查。
 (function () {
   'use strict';
@@ -30,7 +30,7 @@
         <h1 class="admin-title">管理後台</h1>
         <button type="button" class="link-btn" data-act="logout">登出</button>
       </div>
-      <nav class="admin-tabs">${t('#/admin', '活動', 'list')}${t('#/admin/new', '＋ 新增活動', 'new')}${t('#/admin/import', '匯入', 'import')}${t('#/admin/log', '操作紀錄', 'log')}</nav>`;
+      <nav class="admin-tabs">${t('#/admin', '活動', 'list')}${t('#/admin/new', '＋ 新增活動', 'new')}${t('#/admin/import', '匯入', 'import')}${t('#/admin/push', '📣 發通知', 'push')}${t('#/admin/log', '操作紀錄', 'log')}</nav>`;
   }
 
   // ---------- 路由 ----------
@@ -49,6 +49,7 @@
       }
       if (parts[0] === 'log') return renderLog();
       if (parts[0] === 'import') return renderImport();
+      if (parts[0] === 'push') return renderPush();
       await renderList();
     } catch (err) {
       handleError(err);
@@ -484,6 +485,122 @@
         await loadEvents();
         CalendarPage.refresh(true);
         drawBatches();
+      } catch (err) {
+        busy(false);
+        if (err.code === 'UNAUTHORIZED') return renderLogin(err.message);
+        window.alert(err.message);
+      }
+    }));
+  }
+
+  // ---------- 發通知（手機提醒，規格第 10-1 節） ----------
+
+  const pad = (n) => String(n).padStart(2, '0');
+  function localInput(ms) {
+    const d = new Date(ms);
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+  function stampOf(ms) {
+    const d = new Date(ms);
+    return `${d.getMonth() + 1}/${d.getDate()}（${'日一二三四五六'[d.getDay()]}）${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+  const unitName = (u) => (u === window.SITE.fentan ? '分壇' : u);
+  const targetText = (t) => (t === 'all' ? '全部' : t.map(unitName).join('、'));
+
+  async function renderPush() {
+    view.innerHTML = tabs('push') + '<p class="panel-empty">載入中⋯</p>';
+    bindCommon();
+    const [stats, list] = await Promise.all([Api.admin('adminPushStats'), Api.admin('adminPushList')]);
+    const counts = stats.counts || {};
+    const total = Object.values(counts).reduce((a, b) => a + b, 0);
+    const units = stats.units;
+    const opened = units.filter((u) => counts[u]).map((u) => `${Fmt.esc(unitName(u))} ${counts[u]}`).join('、');
+    view.innerHTML = tabs('push') + `
+      <h2 class="admin-sub">發通知到家人的手機</h2>
+      <p class="hint">只會送到有開啟「🔔 手機提醒」的手機。目前共 <strong>${total}</strong> 支${opened ? '：' + opened : '，還沒有人開啟'}。每天早上 7 點、晚上 8 點的活動提醒是自動送的，不用在這裡發。</p>
+      <form class="admin-form" novalidate>
+        <fieldset class="form-block">
+          <legend>內容</legend>
+          <label class="form-row"><span>標題（最多 40 字）</span><input class="input" name="title" maxlength="40" placeholder="例：統班改地點"></label>
+          <label class="form-row"><span>內容（最多 200 字）</span><textarea class="input textarea" name="body" rows="3" maxlength="200" placeholder="例：這週日的統班改在彌勒山，時間不變 🙏"></textarea></label>
+        </fieldset>
+        <fieldset class="form-block">
+          <legend>發給誰</legend>
+          <label class="radio-row"><input type="radio" name="who" value="all" checked> 全部（${total} 支）</label>
+          <label class="radio-row"><input type="radio" name="who" value="pick"> 選單位</label>
+          <div class="push-units" hidden>${units.map((u) => `<label class="check-chip"><input type="checkbox" name="unit" value="${Fmt.esc(u)}"> ${Fmt.esc(unitName(u))}<small>${counts[u] || 0}</small></label>`).join('')}</div>
+          <p class="hint">「分壇」是送給選分壇的手機；某一區是送給選那一區的手機。</p>
+        </fieldset>
+        <fieldset class="form-block">
+          <legend>什麼時候發</legend>
+          <label class="radio-row"><input type="radio" name="when" value="now" checked> 馬上發</label>
+          <label class="radio-row"><input type="radio" name="when" value="later"> 排定時間</label>
+          <input class="input" type="datetime-local" name="sendAt" hidden>
+        </fieldset>
+        <p class="form-error" hidden></p>
+        <button type="submit" class="btn btn-primary btn-block">發出通知</button>
+      </form>
+      <h2 class="admin-sub import-batches-title">最近發的通知</h2>
+      <div id="push-list"></div>`;
+    bindCommon();
+    const form = view.querySelector('form');
+    const errBox = form.querySelector('.form-error');
+    const unitsBox = form.querySelector('.push-units');
+    form.sendAt.value = localInput(Date.now() + 3600e3 - (Date.now() % 600e3));
+    form.addEventListener('change', () => {
+      unitsBox.hidden = form.who.value !== 'pick';
+      form.sendAt.hidden = form.when.value !== 'later';
+    });
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const target = form.who.value === 'all' ? 'all' : [...form.querySelectorAll('[name="unit"]:checked')].map((x) => x.value);
+      const later = form.when.value === 'later';
+      const sendAt = later ? new Date(form.sendAt.value).getTime() : null;
+      const title = form.title.value.trim();
+      const body = form.body.value.trim();
+      const errs = [];
+      if (!title) errs.push('請填標題');
+      if (!body) errs.push('請填內容');
+      if (target !== 'all' && !target.length) errs.push('請勾選要發給哪些單位');
+      if (later && !(sendAt > Date.now())) errs.push('請選排定的時間');
+      if (errs.length) { errBox.textContent = errs.join('；'); errBox.hidden = false; return; }
+      errBox.hidden = true;
+      const n = target === 'all' ? total : target.reduce((a, u) => a + (counts[u] || 0), 0);
+      if (!window.confirm(`${later ? '排定在 ' + stampOf(sendAt) : '馬上'}發給「${targetText(target)}」，大約 ${n} 支手機：\n\n${title}\n${body}`)) return;
+      busy(true, '送出中⋯');
+      try {
+        await Api.admin('adminPushSend', { title, body, target, sendAt });
+        busy(false);
+        renderPush();
+      } catch (err) {
+        busy(false);
+        if (err.code === 'UNAUTHORIZED') return renderLogin(err.message);
+        errBox.textContent = err.message;
+        errBox.hidden = false;
+      }
+    });
+    const box = view.querySelector('#push-list');
+    const msgs = list.messages || [];
+    box.innerHTML = msgs.length ? `<ul class="log-list">${msgs.map((m) => `
+      <li class="log-item">
+        <div class="log-head"><strong>${Fmt.esc(m.title)}</strong><span class="push-status is-${Fmt.esc(m.status)}">${Fmt.esc(m.status)}</span></div>
+        <div class="card-meta">${Fmt.esc(stampOf(m.sendAt))}・發給${Fmt.esc(targetText(m.target))}${m.status === '已送出' || m.status === '送出中' ? `・成功 ${m.sent}${m.failed ? '、失敗 ' + m.failed : ''}` : ''}</div>
+        <div class="push-body-text">${Fmt.esc(m.body).replace(/\n/g, '<br>')}</div>
+        ${m.status === '排定' ? `<button type="button" class="btn btn-small btn-quiet-danger" data-cancel="${Fmt.esc(m.id)}">取消這則</button>` : ''}
+      </li>`).join('')}</ul>` : '<p class="panel-empty">還沒有發過通知</p>';
+    // 送出中的：過幾秒再看一次（最多 10 次），送完就會變成「已送出」
+    if (msgs.some((m) => m.status === '送出中') && (renderPush.polls = (renderPush.polls || 0) + 1) <= 10) {
+      setTimeout(() => { if (location.hash === '#/admin/push') renderPush(); }, 3000);
+    } else if (!msgs.some((m) => m.status === '送出中')) {
+      renderPush.polls = 0;
+    }
+    box.querySelectorAll('[data-cancel]').forEach((b) => b.addEventListener('click', async () => {
+      if (!window.confirm('確定要取消這則排定的通知嗎？')) return;
+      busy(true, '取消中⋯');
+      try {
+        await Api.admin('adminPushCancel', { id: b.dataset.cancel });
+        busy(false);
+        renderPush();
       } catch (err) {
         busy(false);
         if (err.code === 'UNAUTHORIZED') return renderLogin(err.message);

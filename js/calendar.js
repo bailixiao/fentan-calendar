@@ -623,5 +623,5 @@
     return findEvent(id);
   }
 
-  window.CalendarPage = { init, refresh, onShow, findEvent, fetchEvent, today: () => state.today };
+  window.CalendarPage = { init, refresh, onShow, findEvent, fetchEvent, today: () => state.today, unit: () => state.unit };
 })();

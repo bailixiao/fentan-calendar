@@ -55,6 +55,17 @@
         <li><span class="help-num">2</span><span>按右上角「⋮」。</span></li>
         <li><span class="help-num">3</span><span>選「加到主畫面」或「安裝應用程式」。</span></li>
       </ol>` },
+    { cat: '手機', q: '怎麼開啟手機提醒？', img: 'push.png', a: `
+      <ol class="help-steps">
+        <li><span class="help-num">1</span><span>行事曆上方按「🔔 手機提醒」。</span></li>
+        <li><span class="help-num">2</span><span>選要收哪個單位的提醒（您的區），按「開啟提醒」，手機問要不要允許通知時按「允許」。</span></li>
+        <li><span class="help-num">3</span><span>按「傳測試通知」，幾秒內收到就成功了。</span></li>
+      </ol>
+      <p>每天<strong>晚上 8 點提醒明天</strong>、<strong>早上 7 點提醒今天</strong>的活動（選某一區＝那一區＋分壇；選分壇＝只有分壇），沒有活動那天不送。管理者也可能發重要通知。不用填名字。</p>
+      <p><strong>iPhone、iPad</strong>：要先「加入主畫面」（見下一題），從主畫面打開才能開啟提醒，需要 iOS 16.4 以上。</p>` },
+    { cat: '手機', q: '不想收提醒、或要換區？', a: `
+      <p>按「🔔 手機提醒」，在「改成收哪個單位」換成別的區就好；不想收就按「關閉提醒」。</p>
+      <p>沒收到通知：請確認手機的設定裡，有允許這個網站（或 Chrome、Safari）的通知，而且沒有開「勿擾模式」。</p>` },
     { cat: '手機', q: '字太小看不清楚？', a: `
       <p>按右上角的「A＋」，每按一次字會放大一級（共三級），再按就回到原本的大小。這支手機會記住。</p>` },
     { cat: '管理者', q: '怎麼新增、修改活動？', img: 'admin-list.png', a: `
@@ -72,6 +83,13 @@
         <li><span class="help-num">4</span><span>按「匯入 N 筆」，家人們大約 1 分鐘內就看得到。</span></li>
       </ol>
       <p>同一次匯入算「一批」。匯錯了，在「匯入」頁下面的「最近匯入的批次」按「刪除這批」，整批一次刪掉。</p>` },
+    { cat: '管理者', q: '怎麼發通知給某一區或全部？', img: 'admin-push.png', a: `
+      <ol class="help-steps">
+        <li><span class="help-num">1</span><span>後台按「📣 發通知」。</span></li>
+        <li><span class="help-num">2</span><span>寫標題和內容，選發給「全部」或勾選某幾個單位（旁邊的數字是開啟提醒的手機數）。</span></li>
+        <li><span class="help-num">3</span><span>選「馬上發」或「排定時間」，按「發出通知」，確認後送出。</span></li>
+      </ol>
+      <p>只會送到有開啟「🔔 手機提醒」的手機。排定的通知在送出前可以取消。每天早晚的活動提醒是自動的，不用另外發。</p>` },
     { cat: '管理者', q: '教全區的活動要輸入嗎？', a: `
       <p>不用。教全區的活動會自動從教全區的系統讀進來，後台也不能選教全區。</p>` },
     { cat: '管理者', q: '怎麼備份資料？', a: `
