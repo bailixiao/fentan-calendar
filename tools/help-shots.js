@@ -75,7 +75,7 @@ const SHOTS = [
       const s = document.getElementById('unit-filter'); s.value = '教真區'; s.dispatchEvent(new Event('change')); await __wait(500);`,
     clip: `return __box('#unit-bar', '#fc');` },
   { name: 'month', hash: '#/', js: `
-      const s = document.getElementById('unit-filter'); s.value = '全部'; s.dispatchEvent(new Event('change'));
+      const s = document.getElementById('unit-filter'); s.value = '教真區'; s.dispatchEvent(new Event('change'));
       document.querySelector('[data-view=month]').click(); await __wait(500);`,
     tap: () => 'document.querySelector(".fc-daygrid-day .cell-dots").closest(".fc-daygrid-day")',
     clip: `return __box('#fc', '#day-panel');` },

@@ -1,6 +1,6 @@
 // 行事曆首頁（沿用教全區的看法）：年／月檢視用 FullCalendar，週、近期是自製的直向列表。
 // 格子顯示國曆、農曆與色點（顏色依類別；分壇的活動外面多一圈金框）；點日期在下方列出當天活動卡片。
-// 上方的單位篩選：全部／分壇／某一區；選某一區時可以勾「也顯示分壇的活動」。
+// 上方的單位篩選：分壇（預設，只看分壇的）／某一區；選某一區時可以勾「也顯示分壇的活動」。沒有「全部」。
 (function () {
   'use strict';
 
@@ -19,7 +19,7 @@
     loading: true, // 載入中不顯示舊區間的資料，避免誤判「沒有活動」
     pendingScroll: null, // 年檢視載入完成後要捲到的月份
     showPast: false, // 年檢視是否顯示今年已過的月份（每次開啟預設收起）
-    unit: readKey('unit', '全部'), // 全部／分壇／某一區
+    unit: readKey('unit', window.SITE.fentan), // 分壇／某一區
     withFentan: readKey('with-fentan', '1') !== '0' // 選某一區時，也顯示分壇的活動
   };
   const windows = new Map(); // 年份 → { data, fresh, promise }
@@ -86,9 +86,9 @@
   // ---------- 單位篩選 ----------
 
   function initUnitFilter() {
-    const opts = ['全部', window.SITE.fentan].concat(window.SITE.units);
-    if (opts.indexOf(state.unit) === -1) state.unit = '全部';
-    el.unit.innerHTML = opts.map((u) => `<option value="${Fmt.esc(u)}">${Fmt.esc(u === window.SITE.fentan ? '分壇的活動' : u === '全部' ? '全部（分壇＋16 區）' : u)}</option>`).join('');
+    const opts = [window.SITE.fentan].concat(window.SITE.units);
+    if (opts.indexOf(state.unit) === -1) state.unit = window.SITE.fentan; // 以前選過「全部」的也改成分壇
+    el.unit.innerHTML = opts.map((u) => `<option value="${Fmt.esc(u)}">${Fmt.esc(u === window.SITE.fentan ? '分壇的活動' : u)}</option>`).join('');
     el.unit.value = state.unit;
     el.withFentan.checked = state.withFentan;
     syncWithFentanBox();
@@ -106,11 +106,10 @@
   }
 
   function syncWithFentanBox() {
-    el.withFentanBox.hidden = state.unit === '全部' || state.unit === window.SITE.fentan;
+    el.withFentanBox.hidden = state.unit === window.SITE.fentan;
   }
 
   function passes(ev) {
-    if (state.unit === '全部') return true;
     if (ev.unit === state.unit) return true;
     return state.unit !== window.SITE.fentan && state.withFentan && ev.unit === window.SITE.fentan;
   }
@@ -362,7 +361,7 @@
   function renderSourceStatus(data) {
     const jq = window.SITE.jiaoquan.unit;
     const src = data.sources && data.sources[jq];
-    const relevant = state.unit === '全部' || state.unit === jq;
+    const relevant = state.unit === jq;
     el.source.hidden = !(src && !src.ok && relevant);
     if (!el.source.hidden) el.source.textContent = `${jq}的活動暫時讀不到，稍後會自動再試（其他活動照常顯示）`;
   }
