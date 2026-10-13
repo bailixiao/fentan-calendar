@@ -10,7 +10,8 @@
    cd worker
    npx wrangler deploy
    ```
-   網址：`https://fentan-calendar-api.<帳號的 workers.dev 子網域>.workers.dev/`，要和 `js/config.js`、`index.html` 的 preconnect 一致。
+   網址：`https://fentan-calendar-api.duty-calendar-worker.workers.dev/`，要和 `js/config.js`、`index.html` 的 preconnect 一致。
+   注意：教全區的 API 和分壇在同一個 Cloudflare 帳號，同帳號的 Worker 預設不能直接互連，`wrangler.toml` 的 `compatibility_flags = ["global_fetch_strictly_public"]` 不能拿掉（拿掉會讀不到教全區）。
 3. **管理密碼**（由管理者自己輸入，不要貼給別人或寫進程式碼）：
    ```
    cd worker

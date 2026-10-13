@@ -3,6 +3,8 @@
 name = "fentan-calendar-api"
 main = "src/index.js"
 compatibility_date = "2026-09-01"
+# 教全區的 API 也在這個帳號的 workers.dev 底下：同帳號的 Worker 預設不能直接互連，加這個讓它走公開網路去讀
+compatibility_flags = ["global_fetch_strictly_public"]
 
 [[durable_objects.bindings]]
 name = "STORE"
