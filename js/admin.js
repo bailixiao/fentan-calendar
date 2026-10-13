@@ -247,9 +247,11 @@
       const names = Fmt.splitNames(f.names.value);
       const max = Number(f.dataset.max) || 0;
       const long = names.filter((n) => n.length > 20);
+      const odd = names.filter((n) => n.length > 4 && n.length <= 20);
       f.querySelector('[data-preview]').innerHTML = names.length ? `
-        <span class="name-count">會存成 ${names.length} 人：</span>${names.map((n) => `<span class="name-chip${n.length > 20 ? ' is-bad' : ''}">${Fmt.esc(n)}</span>`).join('')}
+        <span class="name-count">會存成 ${names.length} 人：</span>${names.map((n) => `<span class="name-chip${n.length > 20 ? ' is-bad' : n.length > 4 ? ' is-odd' : ''}">${Fmt.esc(n)}</span>`).join('')}
         ${long.length ? '<p class="form-error">標紅色的太長了（最多 20 字），是不是兩個名字中間忘了空格或「、」？</p>' : ''}
+        ${odd.length ? `<p class="name-warn">${odd.map((n) => `「${Fmt.esc(n)}」`).join('')}超過 4 個字，確定是一個人的名字嗎？如果是兩個人，中間加空格或「、」。</p>` : ''}
         ${max && names.length > max ? `<p class="form-error">超過最多 ${max} 人</p>` : ''}` : '';
     };
     view.querySelectorAll('.roster-fill').forEach((f) => {
@@ -259,6 +261,11 @@
     view.querySelectorAll('.roster-fill').forEach((f) => f.addEventListener('submit', async (e) => {
       e.preventDefault();
       const msg = f.querySelector('[data-msg]');
+      const odd = Fmt.splitNames(f.names.value).filter((n) => n.length > 4 && n.length <= 20);
+      if (odd.length && !window.confirm(`${odd.map((n) => `「${n}」`).join('')}超過 4 個字，確定是一個人的名字嗎？\n\n按「確定」照這樣儲存；按「取消」回去把名字拆開（中間加空格或「、」）。`)) {
+        f.names.focus();
+        return;
+      }
       msg.textContent = '儲存中⋯';
       try {
         const res = await Api.admin('adminRosterSave', { id: f.dataset.id, date: f.dataset.date, key: f.dataset.key, names: f.names.value });
