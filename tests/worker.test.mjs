@@ -331,9 +331,9 @@ test('教全區的報名狀態：和教全區的算法一樣', () => {
   assert.deepEqual(dayStatus({ mode: '公告型', group: '第4組' }, {}), { kind: 'notice', label: '輪值：第4組' });
 });
 
-test('教全區名單：只留項目、日期、名字、陪同', () => {
+test('教全區名單：只留項目、日期、名字（陪同也不讀）', () => {
   const r = rosterFrom({ id: 'D-1', groupLeader: '測試甲', contact: '測試乙', positions: [{ id: 'P1', name: '打掃', min: 2 }],
     signups: [{ id: 'S1', date: '2026-10-24', positionId: 'P1', name: '王小明', temple: '某佛堂', accompany: true, leader: true, note: '電話 0900-000-000' }, { date: 'bad', positionId: 'P1', name: 'x' }] });
-  assert.deepEqual(r, { id: 'jq-D-1', positions: [{ id: 'P1', name: '打掃' }], signups: [{ date: '2026-10-24', positionId: 'P1', name: '王小明', accompany: true }] });
+  assert.deepEqual(r, { id: 'jq-D-1', positions: [{ id: 'P1', name: '打掃' }], signups: [{ date: '2026-10-24', positionId: 'P1', name: '王小明' }] });
   assert.ok(!JSON.stringify(r).includes('測試甲') && !JSON.stringify(r).includes('0900') && !JSON.stringify(r).includes('佛堂'));
 });

@@ -40,7 +40,7 @@ test('行事曆的教全區活動帶每天的狀態', async () => {
   assert.deepEqual(ev.status, { '2026-10-24': { kind: 'short', label: '缺 1 人' }, '2026-10-25': { kind: 'ok', label: '人數足・3 人' } });
 });
 
-test('報名狀況：30 天內的教全區活動，每天的狀態與名單，只留名字和陪同；快取 5 分鐘', async () => {
+test('報名狀況：30 天內的教全區活動，每天的狀態與名單，只留名字；快取 5 分鐘', async () => {
   const env = setup();
   const r = await env.get('action=getSignups');
   assert.equal(r.ok, true, JSON.stringify(r));
@@ -52,7 +52,7 @@ test('報名狀況：30 天內的教全區活動，每天的狀態與名單，�
   assert.equal(it.unit, '教全區');
   assert.deepEqual(it.days[0], {
     date: '2026-10-24', status: { kind: 'short', label: '缺 1 人' },
-    positions: [{ name: '打掃', people: [{ name: '王小明', accompany: false }] }, { name: '茶水', people: [{ name: '測試丙', accompany: true }] }]
+    positions: [{ name: '打掃', people: [{ name: '王小明' }] }, { name: '茶水', people: [{ name: '測試丙' }] }]
   });
   const text = JSON.stringify(r);
   ['測試甲', '測試乙', '某佛堂', '測試備註'].forEach((x) => assert.ok(!text.includes(x), x));
@@ -67,7 +67,7 @@ test('單一活動的名單：檢查代號、教全區找不到就回找不到�
   const env = setup();
   let r = await env.get('action=getRoster&id=jq-D-5');
   assert.equal(r.data.days.length, 2);
-  assert.deepEqual(r.data.days[1].positions[0].people, [{ name: '測試丁', accompany: false }]);
+  assert.deepEqual(r.data.days[1].positions[0].people, [{ name: '測試丁' }]);
   await env.get('action=getRoster&id=jq-D-5');
   assert.equal(env.calls.filter((c) => c === 'getDuty').length, 1);
   r = await env.get('action=getRoster&id=E-20261012-abcdef');

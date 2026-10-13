@@ -128,21 +128,21 @@ export function dayStatus(duty, day) {
 }
 
 /**
- * 教全區 getDuty／getBundle 的一筆詳情 → 名單。只留了愿項目名稱、日期、名字、是否陪同（佛堂、備註、組長、電話一律丟掉）。
- * 回傳 { id, positions: [{ id, name }], signups: [{ date, positionId, name, accompany }] }
+ * 教全區 getDuty／getBundle 的一筆詳情 → 名單。只留了愿項目名稱、日期、名字（陪同、佛堂、備註、組長、電話一律丟掉）。
+ * 回傳 { id, positions: [{ id, name }], signups: [{ date, positionId, name }] }
  */
 export function rosterFrom(detail) {
   const positions = (Array.isArray(detail && detail.positions) ? detail.positions : [])
     .filter((p) => p && typeof p.id === 'string').map((p) => ({ id: p.id, name: str(p.name).slice(0, 40) }));
   const signups = (Array.isArray(detail && detail.signups) ? detail.signups : [])
     .filter((x) => x && isDate(x.date) && typeof x.positionId === 'string' && str(x.name))
-    .map((x) => ({ date: x.date, positionId: x.positionId, name: str(x.name).slice(0, 20), accompany: !!x.accompany }));
+    .map((x) => ({ date: x.date, positionId: x.positionId, name: str(x.name).slice(0, 20) }));
   return { id: 'jq-' + detail.id, positions, signups };
 }
 
 /**
  * 教全區一筆詳情 → 每一天的狀態與名單（from～to 內的日期）：
- * [{ date, status, positions: [{ name, people: [{ name, accompany }] }] }]
+ * [{ date, status, positions: [{ name, people: [{ name }] }] }]
  */
 export function signupDays(detail, from, to) {
   const r = rosterFrom(detail);
@@ -152,7 +152,7 @@ export function signupDays(detail, from, to) {
     status: dayStatus(detail, days[date]),
     positions: r.positions.map((p) => ({
       name: p.name,
-      people: r.signups.filter((x) => x.date === date && x.positionId === p.id).map((x) => ({ name: x.name, accompany: x.accompany }))
+      people: r.signups.filter((x) => x.date === date && x.positionId === p.id).map((x) => ({ name: x.name }))
     }))
   }));
 }
