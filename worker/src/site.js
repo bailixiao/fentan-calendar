@@ -7,6 +7,11 @@ export const SITE = {
   units: ['教真區', '教善區', '教美區', '教志區', '教孝區', '教仁區', '教勇區', '教定區',
     '教慧區', '教力區', '教發區', '教慈區', '教捨區', '教全區', '教振區', '教理區'],
   categories: ['勤務', '道務', '教育'],
+  // 各區報名系統（第二階段）：分壇讀它的 feed（報名統計）
+  regionSystem: {
+    api: 'https://region-signup-api.duty-calendar-worker.workers.dev/',
+    site: 'https://bailixiao.github.io/region-signup/'
+  },
   // 有自己系統、活動自動讀進來的區：後台不能手動新增這一區的活動
   jiaoquan: {
     unit: '教全區',

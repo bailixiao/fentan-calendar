@@ -6,6 +6,12 @@
       "runtimeExecutable": "node",
       "runtimeArgs": ["tools/dev-server.js", "--mock"],
       "autoPort": true
+    },
+    {
+      "name": "region-mock",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["D:/Projects/各區報名系統/tools/dev-server.js", "--mock"],
+      "autoPort": true
     }
   ]
 }

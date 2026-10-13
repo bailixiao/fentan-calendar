@@ -21,10 +21,11 @@
       EventPage.show(document.getElementById('view-event'), decodeURIComponent(ev[1]), ev[2]);
       return;
     }
-    if (/^#\/signups\/?$/.test(hash)) {
+    const sg = hash.match(/^#\/signups\/?(\?test=1)?$/);
+    if (sg) {
       showView('signups');
       window.scrollTo(0, 0);
-      SignupsPage.show(document.getElementById('view-signups'));
+      SignupsPage.show(document.getElementById('view-signups'), !!sg[1]);
       return;
     }
     if (/^#\/help\/?$/.test(hash)) {

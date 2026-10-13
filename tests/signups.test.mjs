@@ -77,3 +77,37 @@ test('單一活動的名單：檢查代號、教全區找不到就回找不到�
   r = await env.get('action=getRoster&id=jq-D-9');
   assert.equal(r.error.code, 'NOT_FOUND');
 });
+
+test('報名統計也讀各區報名系統的 feed（只有名字）；test=1 才連測試的區；讀不到時教全區照常', async () => {
+  let t = Date.parse('2026-10-13T02:00:00Z');
+  const seen = [];
+  let regionDown = false;
+  const fetchFn = async (url) => {
+    const u = new URL(url);
+    const q = u.searchParams;
+    if (u.hostname.startsWith('region-signup-api')) {
+      seen.push(q.get('test') || '0');
+      if (regionDown) throw new Error('down');
+      const regions = [{ region: '教真區', events: [{ id: 'E-1', name: '研究班', category: '道務', mode: '報名型', start: '2026-10-22', end: '2026-10-22', startTime: '19:30', days: [{ date: '2026-10-22', status: { kind: 'ok', label: '已報 1 人' }, positions: [{ name: '參加', people: [{ name: '王小明', phone: 'x' }] }] }] }] }];
+      if (q.get('test') === '1') regions.push({ region: '測試區', events: [] });
+      return { ok: true, json: async () => ({ ok: true, data: { from: q.get('from'), to: q.get('to'), regions } }) };
+    }
+    if (q.get('action') === 'getBundle') return { ok: true, json: async () => ({ ok: true, data: { details: { 'D-1': duty('D-1') } } }) };
+    return { ok: true, json: async () => ({ ok: true, data: { duties: [] } }) };
+  };
+  const front = createFront({ callStore: async () => ({ ok: true, data: { events: [] } }), fetch: fetchFn, now: () => t });
+  const get = async (q) => (await front.handle(new Request('http://x/?' + q))).json();
+  let r = await get('action=getSignups');
+  const rs = r.data.items.find((x) => x.id === 'rs-E-1');
+  assert.equal(rs.unit, '教真區');
+  assert.equal(rs.link, 'https://bailixiao.github.io/region-signup/#/r/%E6%95%99%E7%9C%9F%E5%8D%80/e/E-1');
+  assert.deepEqual(rs.days[0].positions[0].people, [{ name: '王小明' }]); // 多的欄位丟掉
+  assert.ok(r.data.items.some((x) => x.id === 'jq-D-1'));
+  r = await get('action=getSignups&test=1');
+  assert.deepEqual(seen, ['0', '1']);
+  regionDown = true;
+  t += 200e3;
+  r = await get('action=getSignups');
+  assert.equal(r.ok, true);
+  assert.ok(r.data.items.some((x) => x.id === 'jq-D-1'));
+});

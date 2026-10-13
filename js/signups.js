@@ -6,6 +6,7 @@
   let token = 0;
   let data = null;
   let unit = '全部';
+  let test = false; // #/signups?test=1：連還沒開放的區（測試區）一起
 
   function people(day) {
     return day.positions.reduce((n, p) => n + p.people.length, 0);
@@ -35,7 +36,7 @@
           <h2 class="sg-date">${Fmt.esc(Fmt.shortDate(date))}<span class="panel-lunar">農曆${Fmt.esc(LunarUtil.lunarOf(date).full)}</span></h2>
           ${items.map(({ it, day }) => `
             <article class="sg-item kind-${Fmt.esc(day.status.kind)}">
-              <a class="sg-head" href="#/event/${encodeURIComponent(it.id)}?date=${date}">
+              <a class="sg-head" href="${it.id.indexOf('rs-') === 0 ? Fmt.esc(it.link) + '?date=' + date : '#/event/' + encodeURIComponent(it.id) + '?date=' + date}"${it.id.indexOf('rs-') === 0 ? ' target="_blank" rel="noopener"' : ''}>
                 <span class="card-main">
                   ${Fmt.tagsHtml(it)}
                   <span class="card-title">${Fmt.esc(it.name)}</span>
@@ -49,7 +50,7 @@
     }).join('');
     view.innerHTML = `
       <h1 class="admin-title">📊 報名統計</h1>
-      <p class="hint">各區在各區自己的系統報名，這裡自動彙整今天起 30 天（${Fmt.esc(Fmt.shortDate(data.from))}–${Fmt.esc(Fmt.shortDate(data.to))}）的報名。目前只有教全區有報名系統，其他區有了之後會自動出現在這裡。</p>
+      <p class="hint">各區在各區自己的系統報名，這裡自動彙整今天起 30 天（${Fmt.esc(Fmt.shortDate(data.from))}–${Fmt.esc(Fmt.shortDate(data.to))}）的報名。教全區用自己的系統；其他區開放「各區報名系統」後會自動出現在這裡。${test ? '<strong>（測試模式：包含還沒開放的區）</strong>' : ''}</p>
       ${units.length > 1 ? `<label class="unit-pick sg-filter"><span class="unit-label">看哪一區</span><select class="input" data-f="unit">${['全部'].concat(units).map((u) => `<option${u === unit ? ' selected' : ''}>${Fmt.esc(u)}</option>`).join('')}</select></label>` : ''}
       <div class="sg-summary">
         <div><strong>${list.length}</strong><span>個活動（天）</span></div>
@@ -63,12 +64,14 @@
     if (sel) sel.addEventListener('change', () => { unit = sel.value; render(view); });
   }
 
-  async function show(view) {
+  async function show(view, testMode) {
     const t = ++token;
+    if (test !== !!testMode) data = null;
+    test = !!testMode;
     if (data) render(view);
     else view.innerHTML = '<h1 class="admin-title">📊 報名統計</h1><p class="panel-empty">載入中⋯</p>';
     try {
-      const fresh = await Api.getSignups();
+      const fresh = await Api.getSignups(test);
       if (t !== token) return;
       data = fresh;
       render(view);

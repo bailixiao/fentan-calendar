@@ -92,7 +92,62 @@ export function createFront(opts) {
     return { id, unit: ev.unit, name, category, mode, start, end, startTime, endTime, location, link, days: signupDays(detail, from, to) };
   }
 
-  async function getSignups() {
+  // ---------- 各區報名系統的報名（規格第 9-1 節）：feed 快取 2 分鐘 ----------
+  const regionFeed = new Map(); // 'test' | 'open' → { at, items, promise }
+
+  /** 各區報名系統的 feed → 報名統計的格式（名單只有名字；點活動打開該區的報名頁） */
+  function itemsFromFeed(data) {
+    const out = [];
+    const site = SITE.regionSystem.site;
+    (data && Array.isArray(data.regions) ? data.regions : []).forEach((r) => {
+      (Array.isArray(r.events) ? r.events : []).forEach((ev) => {
+        const days = (Array.isArray(ev.days) ? ev.days : []).map((d) => ({
+          date: d.date,
+          status: d.status,
+          positions: (d.positions || []).map((p) => ({ name: String(p.name || '').slice(0, 40), people: (p.people || []).map((x) => ({ name: String(x.name || '').slice(0, 20) })) }))
+        }));
+        if (!days.length) return;
+        out.push({
+          id: 'rs-' + ev.id, unit: r.region, name: ev.name, category: ev.category, mode: ev.mode,
+          start: ev.start, end: ev.end, startTime: ev.startTime || '', endTime: ev.endTime || '', location: ev.location || '',
+          link: `${site}#/r/${encodeURIComponent(r.region)}/e/${encodeURIComponent(ev.id)}`, days
+        });
+      });
+    });
+    return out;
+  }
+
+  async function regionSignups(from, to, test) {
+    const key = test ? 'test' : 'open';
+    let e = regionFeed.get(key);
+    if (!e) { e = { at: 0, items: null, promise: null }; regionFeed.set(key, e); }
+    if (e.items && now() - e.at < 120e3) return e.items;
+    if (!e.promise) {
+      const url = SITE.regionSystem.api + '?' + new URLSearchParams(Object.assign({ action: 'feed', from, to }, test ? { test: '1' } : {}));
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), jqTimeout);
+      e.promise = fetchFn(url, { signal: ctrl.signal }).then((res) => res.json()).then((body) => {
+        if (!body || !body.ok) throw new Error('各區報名系統回錯誤');
+        e.items = itemsFromFeed(body.data);
+        e.at = now();
+      }).finally(() => { clearTimeout(timer); e.promise = null; });
+    }
+    try { await e.promise; } catch (err) { console.warn('各區報名系統讀不到', String(err && err.message)); }
+    return e.items || [];
+  }
+
+  async function getSignups(params) {
+    const test = params && params.get('test') === '1';
+    const [jq, regions] = await Promise.all([
+      jqSignups().catch(() => null),
+      regionSignups(taipeiDate(now()), taipeiDate(now() + 30 * 86400e3), test)
+    ]);
+    if (!jq && !regions.length) throw new AppError('UPSTREAM', '報名資料暫時讀不到，請稍後再試');
+    const base = jq || { from: taipeiDate(now()), to: taipeiDate(now() + 30 * 86400e3), items: [] };
+    return Object.assign({ today: taipeiDate(now()) }, base, { items: base.items.concat(regions), jiaoquanOk: !!jq });
+  }
+
+  async function jqSignups() {
     if (!(bundle.data && now() - bundle.at < jqTtl)) {
       if (!bundle.promise) {
         const from = taipeiDate(now());
@@ -192,7 +247,7 @@ export function createFront(opts) {
         const waitUntil = ctx && ctx.waitUntil ? (p) => ctx.waitUntil(p) : null;
         if (action === 'getEvents') return json({ ok: true, data: await getEvents(url.searchParams, waitUntil) });
         if (action === 'ping') return json({ ok: true, data: { today: taipeiDate(now()) } });
-        if (action === 'getSignups') return json({ ok: true, data: await getSignups() });
+        if (action === 'getSignups') return json({ ok: true, data: await getSignups(url.searchParams) });
         if (action === 'getRoster') return json({ ok: true, data: await getRoster(url.searchParams) });
         // 手機提醒：公鑰（不會變，記在這個 Worker）、手機收到推播後來問要顯示什麼
         if (action === 'pushKey') {
