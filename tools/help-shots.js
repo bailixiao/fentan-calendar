@@ -79,7 +79,12 @@ const SHOTS = [
       document.querySelector('[data-view=recent]').click(); await __wait(800);
       const a = [...document.querySelectorAll('#week a.ev-card')].find((x) => x.querySelector('.card-title').textContent === '統班');
       location.hash = a.getAttribute('href'); await __wait(1500);`,
-    clip: `return __box('#view-event .detail-head', '#linked-box');` },
+    clip: `return __box('#view-event .detail-head', '#view-event .linked-item:last-of-type');` },
+  { name: 'roster-fill', hash: '#/admin', js: `
+      if (document.querySelector('.admin-login')) {
+        const f = document.querySelector('.admin-login'); f.account.value = '教慈區'; f.password.value = 'ci-pass'; f.requestSubmit(); await __wait(1200);
+      }`,
+    clip: `return __box('#view-admin .admin-head', '#view-admin .roster-card');` },
   { name: 'admin-list', hash: '#/admin', js: `
       if (!document.querySelector('.admin-row')) {
         const f = document.querySelector('.admin-login'); f.password.value = 'test-pass'; f.requestSubmit(); await __wait(800);

@@ -456,12 +456,10 @@
     return `<span class="card-links">派給：${list.map((l) => Fmt.esc(short(l))).join('、')}</span>`;
   }
 
-  /** 右邊的「各區已報 N 人」：只算有資料的（各區報名系統今天起 60 天、教全區） */
+  /** 右邊的「各區已填 N 人」：各區組長在分壇行事曆填的名單（規格第 9-4 節） */
   function linksBadge(ev, date) {
-    const known = linksOn(ev, date).filter((l) => l.counts && l.counts[date] !== undefined);
-    if (!known.length) return '';
-    const n = known.reduce((a, l) => a + l.counts[date], 0);
-    return `<span class="badge badge-ok">各區已報 ${n} 人</span>`;
+    const n = linksOn(ev, date).reduce((a, l) => a + ((l.counts && l.counts[date]) || 0), 0);
+    return n ? `<span class="badge badge-ok">各區已填 ${n} 人</span>` : '';
   }
 
   function cardHtml(ev, date, compact) {

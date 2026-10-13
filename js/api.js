@@ -79,43 +79,48 @@
 
   // ---------- 管理後台：通行碼存在這個瀏覽器（12 小時後過期）；讀寫失敗只是要重新登入 ----------
 
-  function loadToken() {
+  function loadSaved() {
     try {
       const t = JSON.parse(localStorage.getItem(TOKEN_KEY) || 'null');
-      return t && t.expires > Date.now() ? t.token : null;
+      return t && t.expires > Date.now() ? t : null;
     } catch (e) {
       return null;
     }
   }
 
-  function saveToken(token, expiresInSec) {
+  /** 記住通行碼與登入的是誰（總管理者，或某一區的組長帳號） */
+  function saveToken(token, expiresInSec, account, role) {
     try {
-      if (token) localStorage.setItem(TOKEN_KEY, JSON.stringify({ token, expires: Date.now() + expiresInSec * 1000 - 60000 }));
+      if (token) localStorage.setItem(TOKEN_KEY, JSON.stringify({ token, account: account || '總管理者', role: role || 'super', expires: Date.now() + expiresInSec * 1000 - 60000 }));
       else localStorage.removeItem(TOKEN_KEY);
     } catch (e) { /* 無痕模式等，忽略 */ }
   }
 
-  let adminToken = loadToken();
+  const saved = loadSaved();
+  let adminToken = saved ? saved.token : null;
+  let adminWho = saved ? { account: saved.account || '總管理者', role: saved.role || 'super' } : null;
 
   /** 管理 API（一律 POST，通行碼放在內容）。通行碼無效時清除並丟出 UNAUTHORIZED，由畫面導回登入 */
   async function admin(action, payload) {
     try {
       return await post(Object.assign({ action, token: adminToken }, payload || {}));
     } catch (err) {
-      if (err.code === 'UNAUTHORIZED') { adminToken = null; saveToken(null); }
+      if (err.code === 'UNAUTHORIZED' && /登入/.test(err.message)) { adminToken = null; adminWho = null; saveToken(null); }
       throw err;
     }
   }
 
-  async function adminLogin(password) {
-    const data = await post({ action: 'adminLogin', password });
+  async function adminLogin(password, account) {
+    const data = await post({ action: 'adminLogin', password, account: account || '' });
     adminToken = data.token;
-    saveToken(data.token, data.expiresInSec);
+    adminWho = { account: data.account || '總管理者', role: data.role || 'super' };
+    saveToken(data.token, data.expiresInSec, adminWho.account, adminWho.role);
   }
 
   function adminLogout() {
     const token = adminToken;
     adminToken = null;
+    adminWho = null;
     saveToken(null);
     if (token) post({ action: 'adminLogout', token }).catch(() => {});
   }
@@ -125,7 +130,7 @@
     getEvents: (from, to, fresh) => get('getEvents', Object.assign({ from, to }, fresh ? { fresh: '1' } : {})),
     // 分壇行事曆畫面：只有分壇的活動，各區的勤務掛在下面（規格第 9-3 節）
     getCalendar: (from, to, fresh, test) => get('getCalendar', Object.assign({ from, to }, fresh ? { fresh: '1' } : {}, test ? { test: '1' } : {})),
-    getLinked: (id, date, test) => get('getLinked', Object.assign({ id, date }, test ? { test: '1' } : {})),
+    loginAccounts: () => get('loginAccounts', {}),
     // 手機提醒：只送推播網址和單位，沒有名字
     pushKey: () => get('pushKey', {}),
     pushSubscribe: (endpoint, unit) => post({ action: 'pushSubscribe', endpoint, unit }),
@@ -134,6 +139,7 @@
     admin,
     adminLogin,
     adminLogout,
-    isAdmin: () => !!adminToken
+    isAdmin: () => !!adminToken,
+    who: () => adminWho // { account, role: 'super' | 'region' }
   };
 })();

@@ -740,3 +740,12 @@ select.input { appearance: auto; }
 .linked-item .roster { margin-top: 8px; }
 .linked-item .link-btn { margin-top: 8px; }
 .detail-section h2 .h2-sub { margin-left: 10px; font-family: var(--sans); font-size: .95rem; font-weight: 500; color: var(--accent); }
+
+/* ---------- 各區組長填名單（規格第 9-4 節） ---------- */
+
+.roster-card { margin: 0 0 14px; padding: 12px 14px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); }
+.roster-card h3 { margin: 0; font-family: var(--serif); font-size: 1.15rem; }
+.roster-date { margin-top: 8px; }
+.roster-fill { display: grid; gap: 6px; margin: 10px 0 0; }
+.roster-fill-actions { display: flex; align-items: center; gap: 10px; }
+.linked-item .roster small { margin-left: 4px; }

@@ -23,10 +23,13 @@ export function createMemoryStore() {
     deleteEvent: (id) => { events.delete(id); },
     addLog: (entry) => { log.push({ ...entry }); if (log.length > LOG_KEEP) log.splice(0, log.length - LOG_KEEP); },
     listLog: (limit) => log.slice(-limit).reverse(),
-    putSession: (hash, exp) => { sessions.set(hash, exp); },
-    getSession: (hash) => (sessions.has(hash) ? sessions.get(hash) : null),
+    // who：''＝總管理者，區名＝那一區的組長帳號
+    putSession: (hash, exp, who) => { sessions.set(hash, { exp, who: who || '' }); },
+    getSession: (hash) => (sessions.has(hash) ? sessions.get(hash).exp : null),
+    getSessionWho: (hash) => (sessions.has(hash) ? sessions.get(hash).who : null),
     deleteSession: (hash) => { sessions.delete(hash); },
-    purgeSessions: (now) => { sessions.forEach((exp, k) => { if (exp <= now) sessions.delete(k); }); },
+    deleteSessionsOf: (who) => { sessions.forEach((v, k) => { if (v.who === who) sessions.delete(k); }); },
+    purgeSessions: (now) => { sessions.forEach((v, k) => { if (v.exp <= now) sessions.delete(k); }); },
     getProp: (k) => (props.has(k) ? props.get(k) : null),
     setProp: (k, v) => { props.set(k, v); },
     putSub: (sub) => { subs.set(sub.id, { ...sub }); },
@@ -56,6 +59,8 @@ export function createSqlStore(storage) {
   sql.exec('CREATE TABLE IF NOT EXISTS events (id TEXT PRIMARY KEY, data TEXT NOT NULL)');
   sql.exec('CREATE TABLE IF NOT EXISTS log (seq INTEGER PRIMARY KEY AUTOINCREMENT, data TEXT NOT NULL)');
   sql.exec('CREATE TABLE IF NOT EXISTS sessions (hash TEXT PRIMARY KEY, exp INTEGER NOT NULL)');
+  // 2026/10/13：加上 who（''＝總管理者、區名＝組長帳號）；舊的表沒有這一欄就補上
+  if (!sql.exec('PRAGMA table_info(sessions)').toArray().some((c) => c.name === 'who')) sql.exec("ALTER TABLE sessions ADD COLUMN who TEXT NOT NULL DEFAULT ''");
   sql.exec('CREATE TABLE IF NOT EXISTS props (k TEXT PRIMARY KEY, v TEXT)');
   sql.exec('CREATE TABLE IF NOT EXISTS subs (id TEXT PRIMARY KEY, unit TEXT NOT NULL, data TEXT NOT NULL)');
   sql.exec('CREATE INDEX IF NOT EXISTS subs_unit ON subs (unit, id)');
@@ -75,9 +80,11 @@ export function createSqlStore(storage) {
       sql.exec('DELETE FROM log WHERE seq <= (SELECT MAX(seq) FROM log) - ?', LOG_KEEP);
     },
     listLog: (limit) => sql.exec('SELECT data FROM log ORDER BY seq DESC LIMIT ?', limit).toArray().map((r) => JSON.parse(r.data)),
-    putSession: (hash, exp) => { sql.exec('INSERT INTO sessions (hash, exp) VALUES (?, ?) ON CONFLICT(hash) DO UPDATE SET exp = excluded.exp', hash, exp); },
+    putSession: (hash, exp, who) => { sql.exec('INSERT INTO sessions (hash, exp, who) VALUES (?, ?, ?) ON CONFLICT(hash) DO UPDATE SET exp = excluded.exp, who = excluded.who', hash, exp, who || ''); },
     getSession: (hash) => { const r = one(sql.exec('SELECT exp FROM sessions WHERE hash = ?', hash)); return r ? r.exp : null; },
+    getSessionWho: (hash) => { const r = one(sql.exec('SELECT who FROM sessions WHERE hash = ?', hash)); return r ? r.who : null; },
     deleteSession: (hash) => { sql.exec('DELETE FROM sessions WHERE hash = ?', hash); },
+    deleteSessionsOf: (who) => { sql.exec('DELETE FROM sessions WHERE who = ?', who); },
     purgeSessions: (now) => { sql.exec('DELETE FROM sessions WHERE exp <= ?', now); },
     getProp: (k) => { const r = one(sql.exec('SELECT v FROM props WHERE k = ?', k)); return r ? r.v : null; },
     setProp: (k, v) => { sql.exec('INSERT INTO props (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v', k, v); },

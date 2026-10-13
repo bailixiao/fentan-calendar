@@ -1,10 +1,10 @@
 // Worker 前門：接 HTTP 請求。
 //   - getEvents：合併「手動活動（Durable Object）」和「教全區的活動（教全區的公開 API）」，兩邊都在記憶體快取，
 //     人再多也不會每次都問資料庫或教全區（規格第 6 節）。各區報名系統也讀這個（分壇分配的勤務）。
-//   - getCalendar：分壇行事曆畫面用（只有分壇的活動，各區的勤務掛在下面，附各區已報幾人）；getLinked：一個活動各區的名單（規格第 9-3 節）。
+//   - getCalendar：分壇行事曆畫面用（只有分壇的活動，各區的勤務掛在下面，名單是各區組長填的；規格第 9-3、9-4 節）。
 //   - 管理動作（POST）：轉給 Durable Object。
 import { SITE } from './site.js';
-import { AppError, buildCalendar, checkRange, fromJiaoquan, inRange, isDate, parentKey, signupDays, taipeiDate, yearsOf } from './logic.js';
+import { AppError, buildCalendar, checkRange, fromJiaoquan, inRange, taipeiDate, yearsOf } from './logic.js';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -13,7 +13,8 @@ const CORS = {
 };
 const MAX_BODY = 400000; // 批次匯入最多 300 筆
 const PUBLIC_POST = { adminLogin: 1, adminLogout: 1, adminList: 1, adminSave: 1, adminDelete: 1, adminImport: 1, adminDeleteBatch: 1, adminLog: 1, adminBackup: 1,
-  pushSubscribe: 1, pushUnsubscribe: 1, pushTest: 1, adminPushStats: 1, adminPushList: 1, adminPushSend: 1, adminPushCancel: 1 };
+  pushSubscribe: 1, pushUnsubscribe: 1, pushTest: 1, adminPushStats: 1, adminPushList: 1, adminPushSend: 1, adminPushCancel: 1,
+  adminAccounts: 1, adminSetAccount: 1, adminRosterList: 1, adminRosterSave: 1 };
 
 function json(obj, status) {
   return new Response(JSON.stringify(obj), {
@@ -82,162 +83,29 @@ export function createFront(opts) {
     }
   }
 
-  // ---------- 教全區的報名名單（規格第 9-1 節） ----------
-  const rosters = new Map(); // getDuty：id → { at, data }，2 分鐘
+  // ---------- 分壇行事曆畫面（規格第 9-3、9-4 節） ----------
 
-  function summaryOf(detail, from, to) {
-    const ev = fromJiaoquan({ duties: [detail] })[0];
-    if (!ev) return null;
-    const { id, name, category, mode, start, end, startTime, endTime, location, link } = ev;
-    return { id, unit: ev.unit, name, category, mode, start, end, startTime, endTime, location, link, days: signupDays(detail, from, to) };
-  }
-
-  // ---------- 各區報名系統的報名（規格第 9-1 節）：feed 快取 2 分鐘 ----------
-  const regionFeed = new Map(); // 'test' | 'open' → { at, items, promise }
-
-  /** 各區報名系統的 feed → 報名統計的格式（名單只有名字；點活動打開該區的報名頁） */
-  function itemsFromFeed(data) {
-    const out = [];
-    const site = SITE.regionSystem.site;
-    (data && Array.isArray(data.regions) ? data.regions : []).forEach((r) => {
-      (Array.isArray(r.events) ? r.events : []).forEach((ev) => {
-        const days = (Array.isArray(ev.days) ? ev.days : []).map((d) => ({
-          date: d.date,
-          status: d.status,
-          positions: (d.positions || []).map((p) => ({ name: String(p.name || '').slice(0, 40), people: (p.people || []).map((x) => ({ name: String(x.name || '').slice(0, 20) })) }))
-        }));
-        if (!days.length) return;
-        out.push({
-          id: 'rs-' + ev.id, unit: r.region, name: ev.name, category: ev.category, mode: ev.mode,
-          start: ev.start, end: ev.end, startTime: ev.startTime || '', endTime: ev.endTime || '', location: ev.location || '',
-          link: `${site}#/r/${encodeURIComponent(r.region)}/e/${encodeURIComponent(ev.id)}`, days
-        });
-      });
-    });
-    return out;
-  }
-
-  async function regionSignups(from, to, test) {
-    const key = test ? 'test' : 'open';
-    let e = regionFeed.get(key);
-    if (!e) { e = { at: 0, items: null, promise: null }; regionFeed.set(key, e); }
-    if (e.items && now() - e.at < 60e3) return e.items;
-    if (!e.promise) {
-      const url = SITE.regionSystem.api + '?' + new URLSearchParams(Object.assign({ action: 'feed', from, to }, test ? { test: '1' } : {}));
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), jqTimeout);
-      e.promise = fetchFn(url, { signal: ctrl.signal }).then((res) => res.json()).then((body) => {
-        if (!body || !body.ok) throw new Error('各區報名系統回錯誤');
-        e.items = itemsFromFeed(body.data);
-        e.at = now();
-      }).finally(() => { clearTimeout(timer); e.promise = null; });
-    }
-    try { await e.promise; } catch (err) { console.warn('各區報名系統讀不到', String(err && err.message)); }
-    return e.items || [];
-  }
-
-  // ---------- 各區報名系統：單一活動（名單）、開放的區；快取 1～2 分鐘 ----------
-  const regionCache = new Map(); // key → { at, data }
-
-  async function regionGet(params, maxAge) {
-    const key = JSON.stringify(params);
-    const hit = regionCache.get(key);
-    if (hit && now() - hit.at < maxAge) return hit.data;
-    const url = SITE.regionSystem.api + '?' + new URLSearchParams(params);
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), jqTimeout);
-    try {
-      const body = await (await fetchFn(url, { signal: ctrl.signal })).json();
-      if (!body || !body.ok) throw new AppError(body && body.error ? body.error.code : 'UPSTREAM', body && body.error ? body.error.message : '各區報名系統暫時讀不到');
-      if (regionCache.size > 500) regionCache.clear();
-      regionCache.set(key, { at: now(), data: body.data });
-      return body.data;
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-
-  // ---------- 分壇行事曆畫面（規格第 9-3 節） ----------
-
-  /** 只有分壇的活動，各區的勤務掛在下面；每個掛著的附「那天報了幾人」（各區報名系統：今天起 60 天；教全區：行事曆的人數） */
-  async function getCalendar(params, waitUntil) {
+  /**
+   * 只有分壇的活動，派給各區的勤務掛在下面；名單是各區組長在分壇行事曆填的（不讀其他系統）。
+   * 每個掛著的勤務附 counts：那天組長填了幾人。
+   */
+  async function getCalendar(params) {
+    const from = params.get('from');
+    const to = params.get('to');
+    checkRange(from, to);
     const test = params.get('test') === '1';
-    const raw = await getEvents(params, waitUntil);
-    const items = buildCalendar(raw.events, test);
-    const feed = await regionSignups(taipeiDate(now()), taipeiDate(now() + 60 * 86400e3), test);
-    const fromRegion = new Map();
-    feed.forEach((it) => { if (it.id.indexOf('rs-F-') === 0) fromRegion.set(it.id.slice(5), it); });
-    const jqById = new Map(raw.events.filter((e) => e.source === 'jiaoquan').map((e) => [e.id, e]));
+    const mine = await localEvents(params.get('fresh') === '1');
+    const items = buildCalendar(inRange(mine, from, to), test);
     items.forEach((it) => {
       it.links = it.links.map((l) => {
         const counts = {};
-        if (l.source === 'jiaoquan') {
-          const ev = jqById.get(l.id);
-          Object.keys((ev && ev.status) || {}).forEach((d) => { counts[d] = ev.status[d].total || 0; });
-        } else {
-          const r = fromRegion.get(l.id);
-          if (r) r.days.forEach((d) => { counts[d.date] = d.positions.reduce((n, q) => n + q.people.length, 0); });
-        }
+        Object.keys(l.roster || {}).forEach((d) => {
+          counts[d] = Object.values(l.roster[d]).reduce((n, names) => n + names.length, 0);
+        });
         return Object.assign({}, l, { counts });
       });
     });
-    return { from: raw.from, to: raw.to, today: raw.today, events: items, sources: raw.sources };
-  }
-
-  /** 一個分壇活動（或合成的卡片）某一天，掛在下面的各區勤務的狀態與名單（只有名字） */
-  async function getLinked(params) {
-    const id = params.get('id') || '';
-    const date = params.get('date') || '';
-    const test = params.get('test') === '1';
-    if (!isDate(date)) throw new AppError('BAD_REQUEST', '日期不對');
-    const cal = await getCalendar(new URLSearchParams(Object.assign({ from: date, to: date }, test ? { test: '1' } : {})));
-    const item = cal.events.find((e) => e.id === id);
-    if (!item) throw new AppError('NOT_FOUND', '找不到這個活動');
-    let open = null; // 開放的區（test 時不檢查，讓各區報名系統自己判斷）
-    if (!test) {
-      try { open = new Set(((await regionGet({ action: 'regions' }, 120e3)).regions || []).map((r) => r.name)); } catch (e) { open = new Set(); }
-    }
-    const site = SITE.regionSystem.site;
-    const onDay = item.links.filter((l) => l.start <= date && l.end >= date);
-    const jqThere = onDay.some((l) => l.source === 'jiaoquan');
-    // 派給教全區的：名單來自教全區系統裡同名的勤務；那邊已經有就不重複列，還沒有就提示教全區去建
-    const list = onDay.filter((l) => !(l.source === 'local' && l.unit === SITE.jiaoquan.unit && jqThere));
-    const links = await Promise.all(list.map(async (l) => {
-      const base = { unit: l.unit, name: l.name, source: l.source };
-      if (l.source === 'local' && l.unit === SITE.jiaoquan.unit) return Object.assign(base, { open: false, hint: 'jiaoquan', key: item.source === 'group' ? item.name : parentKey(item.name) });
-      try {
-        if (l.source === 'jiaoquan') {
-          const r = await getRoster(new URLSearchParams({ id: l.id }));
-          const day = r.days.find((d) => d.date === date);
-          return Object.assign(base, { open: true, day: day || null, link: `${SITE.jiaoquan.site}#/duty/${encodeURIComponent(l.id.slice(3))}?date=${date}` });
-        }
-        if (open && !open.has(l.unit)) return Object.assign(base, { open: false });
-        const ev = await regionGet({ action: 'getEvent', region: l.unit, id: 'F-' + l.id }, 30e3);
-        const d = (ev.days || []).find((x) => x.date === date);
-        return Object.assign(base, {
-          open: true,
-          day: d ? { date, status: d.status, positions: (d.positions || []).map((q) => ({ name: String(q.name || '').slice(0, 40), people: (q.people || []).map((x) => ({ name: String(x.name || '').slice(0, 20) })) })) } : null,
-          link: `${site}#/r/${encodeURIComponent(l.unit)}/e/${encodeURIComponent('F-' + l.id)}?date=${date}`
-        });
-      } catch (err) {
-        if (err instanceof AppError && err.code === 'NOT_FOUND') return Object.assign(base, { open: false });
-        return Object.assign(base, { open: true, error: '暫時讀不到，請稍後再試' });
-      }
-    }));
-    return { id, date, links };
-  }
-
-  async function getRoster(params) {
-    const id = params.get('id') || '';
-    const m = id.match(/^jq-([\w-]{1,60})$/);
-    if (!m) throw new AppError('BAD_REQUEST', '活動代號不對');
-    const hit = rosters.get(m[1]);
-    if (hit && now() - hit.at < 30e3) return hit.data;
-    const detail = await jqGet({ action: 'getDuty', id: m[1] });
-    const data = summaryOf(detail);
-    if (rosters.size > 500) rosters.clear();
-    rosters.set(m[1], { at: now(), data });
-    return data;
+    return { from, to, today: taipeiDate(now()), events: items };
   }
 
   async function fetchJiaoquanYear(year) {
@@ -307,9 +175,8 @@ export function createFront(opts) {
         const waitUntil = ctx && ctx.waitUntil ? (p) => ctx.waitUntil(p) : null;
         if (action === 'getEvents') return json({ ok: true, data: await getEvents(url.searchParams, waitUntil) });
         if (action === 'ping') return json({ ok: true, data: { today: taipeiDate(now()) } });
-        if (action === 'getCalendar') return json({ ok: true, data: await getCalendar(url.searchParams, waitUntil) });
-        if (action === 'getLinked') return json({ ok: true, data: await getLinked(url.searchParams) });
-        if (action === 'getRoster') return json({ ok: true, data: await getRoster(url.searchParams) });
+        if (action === 'getCalendar') return json({ ok: true, data: await getCalendar(url.searchParams) });
+        if (action === 'loginAccounts') return json(await opts.callStore({ action: 'loginAccounts' }));
         // 手機提醒：公鑰（不會變，記在這個 Worker）、手機收到推播後來問要顯示什麼
         if (action === 'pushKey') {
           if (!pushKey) pushKey = await storeCall({ action: 'pushKey' });
@@ -325,7 +192,7 @@ export function createFront(opts) {
       try { body = JSON.parse(text); } catch (e) { throw new AppError('BAD_REQUEST', '資料格式錯誤'); }
       if (!body || !PUBLIC_POST[body.action]) throw new AppError('BAD_REQUEST', '未知的 action：' + (body && body.action ? String(body.action).slice(0, 30) : '（空白）'));
       const res = await opts.callStore(body);
-      if (res && res.ok && /^admin(Save|Delete|Import|DeleteBatch)$/.test(body.action)) local.at = 0; // 這個 Worker 的快取馬上失效
+      if (res && res.ok && /^admin(Save|Delete|Import|DeleteBatch|RosterSave)$/.test(body.action)) local.at = 0; // 這個 Worker 的快取馬上失效
       return json(res);
     } catch (err) {
       return fail(err);

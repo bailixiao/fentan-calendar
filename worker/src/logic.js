@@ -136,8 +136,23 @@ export function publicEvent(ev) {
     start: ev.start, end: ev.end, startTime: ev.startTime || '', endTime: ev.endTime || '',
     location: ev.location || '', note: ev.note || '', link: ev.link || '',
     kind: ev.unit === SITE.fentan ? '' : ev.kind || KINDS[0],
-    positions: Array.isArray(ev.positions) ? ev.positions : []
+    positions: Array.isArray(ev.positions) ? ev.positions : [],
+    roster: ev.roster && typeof ev.roster === 'object' ? ev.roster : {} // 各區組長填的名單：日期 → 了愿項目（沒有項目用 _）→ 名字（規格第 9-4 節）
   };
+}
+
+/** 組長填的名字：字串（逗號、頓號、空白、換行隔開）或陣列 → 去掉空白、重複；每個最多 20 字、最多 100 人 */
+export function cleanRosterNames(input) {
+  const list = Array.isArray(input) ? input : String(input || '').split(/[,，、;；\s　]+/);
+  const out = [];
+  list.forEach((n) => {
+    const name = String(n || '').replace(/[\s　]/g, '');
+    if (!name) return;
+    if (name.length > 20) throw new AppError('BAD_REQUEST', `名字「${name.slice(0, 20)}⋯」太長了（最多 20 字）`);
+    if (out.indexOf(name) === -1) out.push(name);
+  });
+  if (out.length > 100) throw new AppError('BAD_REQUEST', '一欄最多 100 人');
+  return out;
 }
 
 // ---------- 教全區的報名狀態（規格第 9-1 節，算法同教全區 js/format.js 的 dayState） ----------
@@ -166,36 +181,6 @@ export function dayStatus(duty, day) {
   if (shortage > 0) return { kind: 'short', label: `缺 ${shortage} 人` };
   const unlimited = positions.length > 0 && positions.every((p) => p.max === null || p.max === undefined);
   return { kind: 'ok', label: unlimited ? `已報 ${total} 人` : `人數足・${total} 人` };
-}
-
-/**
- * 教全區 getDuty／getBundle 的一筆詳情 → 名單。只留了愿項目名稱、日期、名字（陪同、佛堂、備註、組長、電話一律丟掉）。
- * 回傳 { id, positions: [{ id, name }], signups: [{ date, positionId, name }] }
- */
-export function rosterFrom(detail) {
-  const positions = (Array.isArray(detail && detail.positions) ? detail.positions : [])
-    .filter((p) => p && typeof p.id === 'string').map((p) => ({ id: p.id, name: str(p.name).slice(0, 40) }));
-  const signups = (Array.isArray(detail && detail.signups) ? detail.signups : [])
-    .filter((x) => x && isDate(x.date) && typeof x.positionId === 'string' && str(x.name))
-    .map((x) => ({ date: x.date, positionId: x.positionId, name: str(x.name).slice(0, 20) }));
-  return { id: 'jq-' + detail.id, positions, signups };
-}
-
-/**
- * 教全區一筆詳情 → 每一天的狀態與名單（from～to 內的日期）：
- * [{ date, status, positions: [{ name, people: [{ name }] }] }]
- */
-export function signupDays(detail, from, to) {
-  const r = rosterFrom(detail);
-  const days = detail && detail.days && typeof detail.days === 'object' ? detail.days : {};
-  return Object.keys(days).filter((d) => isDate(d) && (!from || d >= from) && (!to || d <= to)).sort().map((date) => ({
-    date,
-    status: dayStatus(detail, days[date]),
-    positions: r.positions.map((p) => ({
-      name: p.name,
-      people: r.signups.filter((x) => x.date === date && x.positionId === p.id).map((x) => ({ name: x.name }))
-    }))
-  }));
 }
 
 /**
@@ -263,34 +248,33 @@ export function parentKey(name) {
   return coreName(String(name || '').split(/[：:]/)[0]);
 }
 
-/** 掛著的各區勤務：照區的順序（教真區⋯教理區），同一區分壇分配的在前、教全區系統的在後 */
+/** 掛著的各區勤務：照區的順序（教真區⋯教理區，測試區最後） */
 function sortLinks(list) {
   const order = (u) => { const i = SITE.units.indexOf(u); return i === -1 ? 99 : i; };
-  return list.sort((a, b) => order(a.unit) - order(b.unit) || (a.source === 'jiaoquan') - (b.source === 'jiaoquan'));
+  return list.sort((a, b) => order(a.unit) - order(b.unit));
 }
 
+/** 掛著的各區勤務：附了愿項目與各區組長填的名單（規格第 9-4 節） */
 function linkOf(e) {
-  return { id: e.id, unit: e.unit, name: e.name, source: e.source === 'jiaoquan' ? 'jiaoquan' : 'local', start: e.start, end: e.end };
+  return { id: e.id, unit: e.unit, name: e.name, start: e.start, end: e.end, positions: e.positions || [], roster: e.roster || {} };
 }
 
 /**
  * 分壇行事曆的項目：
  *   1. 單位是分壇的活動，links＝掛在下面的各區勤務（分壇分配、教全區系統的）：日期重疊且名稱含分壇活動的名字。
  *   2. 沒掛上的分壇分配勤務：同名稱、同日期的合成一張卡片（代號 G- 開頭）。
- * 區活動、各區自己的活動、沒掛上的教全區活動都不出現；測試區只有 test 才出現。
+ * 區活動、教全區系統的活動都不出現；測試區只有 test 才出現。
  */
 export function buildCalendar(events, test) {
   const overlap = (a, b) => a.start <= b.end && a.end >= b.start;
   const fentan = events.filter((e) => e.source === 'local' && e.unit === SITE.fentan);
   const assigned = events.filter((e) => e.source === 'local' && e.unit !== SITE.fentan && e.kind !== '區活動' && (test || e.unit !== SITE.testRegion));
-  const jq = events.filter((e) => e.source === 'jiaoquan');
   const used = new Set();
   const items = fentan.map((f) => {
     const key = parentKey(f.name);
     const links = [];
     if (key.length >= 2) {
       assigned.forEach((a) => { if (!used.has(a.id) && overlap(a, f) && coreName(a.name).indexOf(key) !== -1) { links.push(linkOf(a)); used.add(a.id); } });
-      jq.forEach((j) => { if (overlap(j, f) && coreName(j.name).indexOf(key) !== -1) links.push(linkOf(j)); });
     }
     return Object.assign({}, f, { links: sortLinks(links) });
   });

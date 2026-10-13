@@ -1,5 +1,5 @@
 // 活動詳情（#/event/<id>?date=yyyy-MM-dd，規格第 9、9-3 節）：類別、日期（含農曆）、時間、地點、說明、相關連結，
-// 下面是「各區報名」：派給各區的勤務，每一筆一段：區、名稱、那天的狀態、報了誰（只有名字）。
+// 下面是「各區名單」：派給各區的勤務，每一筆一段：區、名稱、那一區組長填的名單（規格第 9-4 節）。
 (function () {
   'use strict';
 
@@ -42,43 +42,32 @@
         ${row('地點', Fmt.esc(ev.location))}
       </dl>
       ${ev.note ? `<section class="detail-section"><h2>說明</h2><p class="detail-desc">${Fmt.esc(ev.note).replace(/\n/g, '<br>')}</p></section>` : ''}
-      ${hasLinks ? `<section class="detail-section"><h2>各區報名<span class="h2-sub">${Fmt.esc(Fmt.shortDate(date))}</span></h2><div id="linked-box"><p class="panel-empty">載入中⋯</p></div></section>` : ''}
+      ${hasLinks ? `<section class="detail-section"><h2>各區名單<span class="h2-sub">${Fmt.esc(Fmt.shortDate(date))}</span></h2>${linkedHtml(ev, date)}</section>` : ''}
       ${ev.link ? `<div class="detail-actions"><a class="btn btn-block btn-go" href="${Fmt.esc(ev.link)}" target="_blank" rel="noopener">打開相關連結 ↗</a></div>` : ''}
       <a class="btn btn-block back-btn" href="#/">‹ 回行事曆</a>`;
   }
 
-  /** 各區報名：每一筆派給區的勤務一段 */
-  function linkedHtml(links) {
-    return links.map((l) => {
-      let body;
-      if (l.hint === 'jiaoquan') body = `<p class="muted">請教全區在教全區行事曆建立這個勤務（名稱含「${Fmt.esc(l.key)}」），報名就會出現在這裡。</p>`;
-      else if (!l.open) body = '<p class="muted">這一區還沒有開放報名系統</p>';
-      else if (l.error) body = `<p class="muted">${Fmt.esc(l.error)}</p>`;
-      else if (!l.day) body = '<p class="muted">這天沒有報名資料</p>';
-      else body = Fmt.rosterHtml(l.day);
+  /** 各區名單：每一筆派給區的勤務一段，名單是那一區組長填的（規格第 9-4 節） */
+  function linkedHtml(ev, date) {
+    return linksOn(ev, date).map((l) => {
+      const fields = l.positions && l.positions.length ? l.positions : [{ id: '_', name: '名單', min: null, max: null }];
+      const day = (l.roster || {})[date] || {};
+      const total = fields.reduce((n, p) => n + (day[p.id] || []).length, 0);
+      const rows = fields.map((p) => {
+        const names = day[p.id] || [];
+        const need = p.min ? `／需要 ${p.min}` : '';
+        const count = names.length || p.min ? `<small class="muted">（${names.length}${need} 人）</small>` : '';
+        return `<li><span class="roster-pos">${Fmt.esc(p.name)}</span>${names.length ? names.map(Fmt.esc).join('、') : '<span class="muted">還沒填</span>'}${count}</li>`;
+      }).join('');
       return `
         <article class="linked-item">
           <div class="linked-head">
             <span><span class="unit-tag">${Fmt.esc(l.unit)}</span> <strong>${Fmt.esc(l.name)}</strong></span>
-            ${l.day && l.day.status ? Fmt.statusBadge(l.day.status) : ''}
+            ${total ? `<span class="badge badge-ok">已填 ${total} 人</span>` : '<span class="badge badge-full">還沒填名單</span>'}
           </div>
-          ${body}
-          ${l.open && l.link ? `<a class="link-btn" href="${Fmt.esc(l.link)}" target="_blank" rel="noopener">${l.source === 'jiaoquan' ? '到教全區看' : '到該區的報名頁'} ↗</a>` : ''}
+          <ul class="roster">${rows}</ul>
         </article>`;
-    }).join('') + '<p class="hint">各區在各區自己的報名系統報名，這裡自動更新（約 1 分鐘內）。</p>';
-  }
-
-  async function loadLinked(view, ev, date, t) {
-    const box = view.querySelector('#linked-box');
-    if (!box) return;
-    try {
-      const r = await Api.getLinked(ev.id, date, CalendarPage.test());
-      if (t !== token) return;
-      box.innerHTML = linkedHtml(r.links);
-    } catch (err) {
-      if (t !== token) return;
-      box.innerHTML = `<p class="panel-empty">${Fmt.esc(err.message || '暫時讀不到')}</p>`;
-    }
+    }).join('') + '<p class="hint">名單由各區組長在分壇行事曆填寫。</p>';
   }
 
   async function show(view, id, date) {
@@ -86,7 +75,6 @@
     const render = (ev) => {
       const d = date && date >= ev.start && date <= ev.end ? date : ev.start;
       view.innerHTML = html(ev, d);
-      loadLinked(view, ev, d, t);
     };
     const ev = CalendarPage.findEvent(id);
     if (ev) { render(ev); return; }

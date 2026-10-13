@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { createFront } from '../worker/src/front.js';
 import { createStoreApp } from '../worker/src/store-app.js';
 import { createMemoryStore } from '../worker/src/store.js';
-import { cleanEvent, fromJiaoquan, isDate, taipeiDate, editableUnits, dayStatus, rosterFrom } from '../worker/src/logic.js';
+import { cleanEvent, fromJiaoquan, isDate, taipeiDate, editableUnits, dayStatus } from '../worker/src/logic.js';
 import { SITE } from '../worker/src/site.js';
 
 // 假的教全區回應：故意放人名欄位，確認不會傳出去
@@ -333,12 +333,6 @@ test('教全區的報名狀態：和教全區的算法一樣', () => {
   assert.deepEqual(dayStatus({ mode: '公告型', group: '第4組' }, {}), { kind: 'notice', label: '輪值：第4組' });
 });
 
-test('教全區名單：只留項目、日期、名字（陪同也不讀）', () => {
-  const r = rosterFrom({ id: 'D-1', groupLeader: '測試甲', contact: '測試乙', positions: [{ id: 'P1', name: '打掃', min: 2 }],
-    signups: [{ id: 'S1', date: '2026-10-24', positionId: 'P1', name: '王小明', temple: '某佛堂', accompany: true, leader: true, note: '電話 0900-000-000' }, { date: 'bad', positionId: 'P1', name: 'x' }] });
-  assert.deepEqual(r, { id: 'jq-D-1', positions: [{ id: 'P1', name: '打掃' }], signups: [{ date: '2026-10-24', positionId: 'P1', name: '王小明' }] });
-  assert.ok(!JSON.stringify(r).includes('測試甲') && !JSON.stringify(r).includes('0900') && !JSON.stringify(r).includes('佛堂'));
-});
 
 test('分壇分配：種類、了愿項目、一次派給好幾區、測試區（規格第 9-2 節）', async () => {
   const env = setup();

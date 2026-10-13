@@ -1,5 +1,5 @@
-// 管理後台（#/admin）：登入、活動列表、新增／修改／另存新的／刪除、批次匯入（可整批刪除）、發通知（手機提醒）、操作紀錄、下載備份。
-// 只能改分壇與各區手動輸入的活動；教全區的活動自動讀進來，不在這裡改。權限由伺服器檢查。
+// 管理後台（#/admin）：登入（總管理者或各區組長）、活動列表、新增／修改／另存新的／刪除、批次匯入（可整批刪除）、
+// 發通知（手機提醒）、帳號（各區組長）、填名單、操作紀錄、下載備份。組長帳號只看得到填名單。權限由伺服器檢查。
 (function () {
   'use strict';
 
@@ -30,7 +30,7 @@
         <h1 class="admin-title">管理後台</h1>
         <button type="button" class="link-btn" data-act="logout">登出</button>
       </div>
-      <nav class="admin-tabs">${t('#/admin', '活動', 'list')}${t('#/admin/new', '＋ 新增活動', 'new')}${t('#/admin/import', '匯入', 'import')}${t('#/admin/push', '📣 發通知', 'push')}${t('#/admin/log', '操作紀錄', 'log')}</nav>`;
+      <nav class="admin-tabs">${t('#/admin', '活動', 'list')}${t('#/admin/new', '＋ 新增活動', 'new')}${t('#/admin/roster', '填名單', 'roster')}${t('#/admin/accounts', '帳號', 'accounts')}${t('#/admin/import', '匯入', 'import')}${t('#/admin/push', '📣 發通知', 'push')}${t('#/admin/log', '操作紀錄', 'log')}</nav>`;
   }
 
   // ---------- 路由 ----------
@@ -39,7 +39,12 @@
     view = el;
     if (!Api.isAdmin()) return renderLogin();
     const parts = (sub || '').split('/');
+    const who = Api.who() || { role: 'super' };
     try {
+      // 組長帳號：只有填名單
+      if (who.role === 'region') return renderRoster(who.account);
+      if (parts[0] === 'accounts') return renderAccounts();
+      if (parts[0] === 'roster') return renderRoster(decodeURIComponent(parts[1] || '') || editableUnits().filter((u) => u !== window.SITE.fentan)[0]);
       if (parts[0] === 'new') return renderForm(null, 'new');
       if (parts[0] === 'edit' || parts[0] === 'copy') {
         if (!events) await loadEvents();
@@ -75,7 +80,11 @@
 
   // ---------- 登入 ----------
 
-  function renderLogin(message) {
+  async function renderLogin(message) {
+    let accounts = ['總管理者'];
+    try { accounts = (await Api.loginAccounts()).accounts; } catch (e) { /* 讀不到：只列總管理者 */ }
+    let last = '';
+    try { last = localStorage.getItem('fentan-calendar:last-account') || ''; } catch (e) { /* 忽略 */ }
     view.innerHTML = `
       <form class="admin-login" autocomplete="off">
         <div class="login-head">
@@ -85,7 +94,11 @@
         </div>
         ${message ? `<p class="form-error">${Fmt.esc(message)}</p>` : ''}
         <label class="login-field">
-          <span>管理密碼</span>
+          <span>帳號</span>
+          <select class="input login-input" name="account">${accounts.map((a) => `<option${a === last ? ' selected' : ''}>${Fmt.esc(a)}</option>`).join('')}</select>
+        </label>
+        <label class="login-field">
+          <span>密碼</span>
           <span class="login-pw">
             <input class="input login-input" type="password" name="password" required autocomplete="current-password">
             <button type="button" class="login-eye" aria-label="顯示密碼">顯示</button>
@@ -93,7 +106,7 @@
         </label>
         <p class="form-error" hidden></p>
         <button type="submit" class="btn btn-primary btn-block login-submit">登入</button>
-        <p class="login-foot">家人們看行事曆不用登入</p>
+        <p class="login-foot">各區組長選自己的區登入填名單；家人們看行事曆不用登入</p>
       </form>`;
     const form = view.querySelector('form');
     const input = form.password;
@@ -108,7 +121,8 @@
       errBox.hidden = true;
       busy(true, '登入中⋯');
       try {
-        await Api.adminLogin(input.value);
+        await Api.adminLogin(input.value, form.account.value === '總管理者' ? '' : form.account.value);
+        try { localStorage.setItem('fentan-calendar:last-account', form.account.value); } catch (x) { /* 忽略 */ }
         busy(false);
         show(view, location.hash.replace(/^#\/admin\/?/, ''));
       } catch (err) {
@@ -119,6 +133,117 @@
       }
     });
     input.focus();
+  }
+
+  // ---------- 各區組長：帳號、填名單（規格第 9-4 節） ----------
+
+  const md = (d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
+
+  /** 總管理者：每區一個組長帳號，設定或刪除密碼 */
+  async function renderAccounts() {
+    view.innerHTML = tabs('accounts') + '<p class="panel-empty">載入中⋯</p>';
+    bindCommon();
+    const data = await Api.admin('adminAccounts');
+    view.innerHTML = tabs('accounts') + `
+      <h2 class="admin-sub">各區組長帳號</h2>
+      <p class="hint">每區一個帳號。設好密碼（至少 6 個字）交給那一區的組長，組長登入後只能填「分壇派給這一區的勤務」的名單，不能改活動。改密碼後，已經登入的會被登出。</p>
+      <ul class="admin-list">${data.accounts.map((a) => `
+        <li class="admin-row">
+          <div class="admin-row-main"><strong>${Fmt.esc(a.unit)}</strong><span class="card-meta">${a.hasPassword ? '已設密碼' : '還沒有帳號'}</span></div>
+          <div class="admin-row-actions">
+            <a class="btn btn-small" href="#/admin/roster/${encodeURIComponent(a.unit)}">看名單</a>
+            <button type="button" class="btn btn-small" data-edit="${Fmt.esc(a.unit)}">${a.hasPassword ? '改密碼' : '設密碼'}</button>
+            ${a.hasPassword ? `<button type="button" class="btn btn-small btn-quiet-danger" data-remove="${Fmt.esc(a.unit)}">刪除帳號</button>` : ''}
+          </div>
+          <form class="region-form" data-form="${Fmt.esc(a.unit)}" hidden>
+            <label class="form-row"><span>${Fmt.esc(a.unit)}組長的密碼（至少 6 個字）</span><input class="input" type="password" name="password" autocomplete="new-password" minlength="6"></label>
+            <p class="form-error" hidden></p>
+            <button type="submit" class="btn btn-primary">儲存</button>
+          </form>
+        </li>`).join('')}</ul>`;
+    bindCommon();
+    view.querySelectorAll('[data-edit]').forEach((b) => b.addEventListener('click', () => {
+      const f = view.querySelector(`[data-form="${b.dataset.edit}"]`);
+      f.hidden = !f.hidden;
+      if (!f.hidden) f.password.focus();
+    }));
+    view.querySelectorAll('[data-remove]').forEach((b) => b.addEventListener('click', async () => {
+      if (!window.confirm(`確定要刪除${b.dataset.remove}的組長帳號？刪除後組長不能再登入填名單（已經填的名單會保留）。`)) return;
+      busy(true, '刪除中⋯');
+      try { await Api.admin('adminSetAccount', { unit: b.dataset.remove, remove: true }); busy(false); renderAccounts(); } catch (err) { busy(false); handleError(err); }
+    }));
+    view.querySelectorAll('.region-form').forEach((f) => f.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const err = f.querySelector('.form-error');
+      busy(true, '儲存中⋯');
+      try {
+        await Api.admin('adminSetAccount', { unit: f.dataset.form, password: f.password.value });
+        busy(false);
+        renderAccounts();
+      } catch (x) {
+        busy(false);
+        if (x.code === 'UNAUTHORIZED') return renderLogin(x.message);
+        err.textContent = x.message;
+        err.hidden = false;
+      }
+    }));
+  }
+
+  /** 填名單：組長看自己區的；總管理者可以選任何一區 */
+  async function renderRoster(unit) {
+    const who = Api.who() || { role: 'super' };
+    const isRegion = who.role === 'region';
+    const head = isRegion
+      ? `<div class="admin-head"><h1 class="admin-title">${Fmt.esc(unit)}・填名單</h1><button type="button" class="link-btn" data-act="logout">登出</button></div>`
+      : tabs('roster');
+    view.innerHTML = head + '<p class="panel-empty">載入中⋯</p>';
+    bindCommon();
+    let data;
+    try { data = await Api.admin('adminRosterList', isRegion ? {} : { unit }); } catch (err) { return handleError(err); }
+    const regions = editableUnits().filter((u) => u !== window.SITE.fentan);
+    const fields = (ev) => (ev.positions && ev.positions.length ? ev.positions : [{ id: '_', name: '名單', min: null, max: null }]);
+    const need = (p) => [p.min ? `需要 ${p.min} 人` : '', p.max ? `最多 ${p.max} 人` : ''].filter(Boolean).join('、');
+    const evHtml = (ev) => `
+      <article class="roster-card">
+        <h3>${Fmt.esc(ev.name)}</h3>
+        <p class="card-meta">${Fmt.esc([ev.start === ev.end ? Fmt.shortDate(ev.start) : `${Fmt.shortDate(ev.start)} – ${Fmt.shortDate(ev.end)}`, Fmt.timeRange(ev), ev.location].filter(Boolean).join('・'))}</p>
+        ${ev.note ? `<p class="hint">${Fmt.esc(ev.note)}</p>` : ''}
+        ${Fmt.datesBetween(ev.start, ev.end).map((d) => `
+          <div class="roster-date">
+            ${ev.start !== ev.end ? `<p class="roster-day"><strong>${Fmt.esc(Fmt.shortDate(d))}</strong></p>` : ''}
+            ${fields(ev).map((p) => {
+              const names = ((ev.roster || {})[d] || {})[p.id] || [];
+              return `<form class="roster-fill" data-id="${Fmt.esc(ev.id)}" data-date="${d}" data-key="${Fmt.esc(p.id)}">
+                <label class="form-row"><span><strong>${Fmt.esc(p.name)}</strong>${need(p) ? `（${Fmt.esc(need(p))}）` : ''}：已填 <b data-count>${names.length}</b> 人</span>
+                  <textarea class="input textarea" name="names" rows="2" placeholder="名字用、或空白隔開，例：王小明、測試甲">${Fmt.esc(names.join('、'))}</textarea></label>
+                <div class="roster-fill-actions"><button type="submit" class="btn btn-primary btn-small">儲存</button><span class="muted" data-msg></span></div>
+              </form>`;
+            }).join('')}
+          </div>`).join('')}
+      </article>`;
+    view.innerHTML = head + `
+      ${isRegion ? '' : `<label class="form-row"><span>看哪一區</span><select class="input" data-f="unit">${regions.map((u) => `<option${u === unit ? ' selected' : ''}>${Fmt.esc(u)}</option>`).join('')}</select></label>`}
+      <p class="hint">這裡是分壇派給${Fmt.esc(unit)}的勤務（7 天前到之後 4 個月）。每一欄填會去的人的名字，按「儲存」，大家打開分壇行事曆的活動就看得到。</p>
+      ${data.events.length ? data.events.map(evHtml).join('') : '<p class="panel-empty">目前沒有分壇派給這一區的勤務</p>'}`;
+    bindCommon();
+    const sel = view.querySelector('[data-f="unit"]');
+    if (sel) sel.addEventListener('change', () => { location.hash = '#/admin/roster/' + encodeURIComponent(sel.value); });
+    view.querySelectorAll('.roster-fill').forEach((f) => f.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const msg = f.querySelector('[data-msg]');
+      msg.textContent = '儲存中⋯';
+      try {
+        const res = await Api.admin('adminRosterSave', { id: f.dataset.id, date: f.dataset.date, key: f.dataset.key, names: f.names.value });
+        const names = ((res.event.roster || {})[f.dataset.date] || {})[f.dataset.key] || [];
+        f.names.value = names.join('、');
+        f.querySelector('[data-count]').textContent = names.length;
+        msg.textContent = `已儲存（${md(f.dataset.date)}）`;
+        CalendarPage.refresh(true);
+      } catch (x) {
+        if (x.code === 'UNAUTHORIZED' && /登入/.test(x.message)) return renderLogin(x.message);
+        msg.textContent = x.message;
+      }
+    }));
   }
 
   // ---------- 活動列表 ----------

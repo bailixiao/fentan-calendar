@@ -1,0 +1,120 @@
+// 各區組長在分壇行事曆填名單（規格第 9-3、9-4 節）：帳號、權限、填名單、行事曆上的顯示。記憶體版，不連網。
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { createFront } from '../worker/src/front.js';
+import { createStoreApp } from '../worker/src/store-app.js';
+import { createMemoryStore } from '../worker/src/store.js';
+import { buildCalendar, cleanRosterNames } from '../worker/src/logic.js';
+
+function setup() {
+  let t = Date.parse('2026-10-13T02:00:00Z'); // 台北 10/13 10:00
+  const clock = { now: () => t, add: (ms) => { t += ms; } };
+  const app = createStoreApp(createMemoryStore(), { password: () => 'test-pass', now: clock.now, fetch: async () => { throw new Error('不連網'); } });
+  const front = createFront({ callStore: (b) => app.call(JSON.parse(JSON.stringify(b))), fetch: async () => { throw new Error('不連網'); }, now: clock.now, localTtl: 0 });
+  const post = async (body) => (await front.handle(new Request('http://x/', { method: 'POST', body: JSON.stringify(body) }))).json();
+  const get = async (q) => (await front.handle(new Request('http://x/?' + q))).json();
+  const ok = (r) => { assert.equal(r.ok, true, JSON.stringify(r)); return r.data; };
+  return { clock, post, get, ok };
+}
+
+const E = (o) => Object.assign({ category: '勤務', start: '2026-10-24' }, o);
+
+async function ready(env) {
+  const sup = env.ok(await env.post({ action: 'adminLogin', password: 'test-pass' })).token;
+  env.ok(await env.post({ action: 'adminSave', token: sup, event: E({ unit: '分壇', category: '道務', name: '統班' }) }));
+  const cook = env.ok(await env.post({ action: 'adminSave', token: sup, event: E({ unit: '教慈區', name: '烹飪：統班', positions: [{ name: '烹飪', min: 15 }, { name: '洗碗', max: 3 }] }) })).event;
+  const vol = env.ok(await env.post({ action: 'adminSave', token: sup, event: E({ unit: '教全區', name: '志工團：統班' }) })).event;
+  env.ok(await env.post({ action: 'adminSetAccount', token: sup, unit: '教慈區', password: 'ci-pass' }));
+  env.ok(await env.post({ action: 'adminSetAccount', token: sup, unit: '教全區', password: 'quan-pass' }));
+  return { sup, cook, vol };
+}
+
+test('組長的名字：逗號、頓號、空白都可以隔開，去掉重複；太長擋下', () => {
+  assert.deepEqual(cleanRosterNames('王小明、測試甲, 測試乙  王小明\n李小華'), ['王小明', '測試甲', '測試乙', '李小華']);
+  assert.deepEqual(cleanRosterNames(['測試甲', ' ', '測試甲']), ['測試甲']);
+  assert.throws(() => cleanRosterNames('一二三四五六七八九十一二三四五六七八九十一'), /太長/);
+});
+
+test('帳號：總管理者設密碼、登入選單只列有密碼的；組長只能填名單、不能做別的', async () => {
+  const env = setup();
+  const { sup } = await ready(env);
+  assert.deepEqual(env.ok(await env.get('action=loginAccounts')).accounts, ['總管理者', '教慈區', '教全區']);
+  const accts = env.ok(await env.post({ action: 'adminAccounts', token: sup })).accounts;
+  assert.equal(accts.find((a) => a.unit === '教慈區').hasPassword, true);
+  assert.equal(accts.find((a) => a.unit === '教真區').hasPassword, false);
+  assert.ok(accts.some((a) => a.unit === '測試區'));
+  let r = await env.post({ action: 'adminSetAccount', token: sup, unit: '教善區', password: '123' });
+  assert.match(r.error.message, /至少 6 個字/);
+  r = await env.post({ action: 'adminLogin', account: '教真區', password: 'x' });
+  assert.match(r.error.message, /還沒有設定密碼/);
+  r = await env.post({ action: 'adminLogin', account: '教慈區', password: 'wrong' });
+  assert.equal(r.error.code, 'UNAUTHORIZED');
+  const login = env.ok(await env.post({ action: 'adminLogin', account: '教慈區', password: 'ci-pass' }));
+  assert.equal(login.role, 'region');
+  assert.equal(login.account, '教慈區');
+  for (const action of ['adminList', 'adminSave', 'adminLog', 'adminAccounts', 'adminBackup', 'adminPushSend']) {
+    r = await env.post({ action, token: login.token, event: E({ unit: '教慈區', name: 'x' }) });
+    assert.match(r.error.message, /組長帳號只能填名單/, action);
+  }
+  // 改密碼：組長已經登入的登出
+  env.ok(await env.post({ action: 'adminSetAccount', token: sup, unit: '教慈區', password: 'ci-pass-2' }));
+  r = await env.post({ action: 'adminRosterList', token: login.token });
+  assert.equal(r.error.code, 'UNAUTHORIZED');
+  // 刪除帳號
+  env.ok(await env.post({ action: 'adminSetAccount', token: sup, unit: '教慈區', remove: true }));
+  assert.deepEqual(env.ok(await env.get('action=loginAccounts')).accounts, ['總管理者', '教全區']);
+});
+
+test('組長填名單：只看得到、只能填自己區的；每個了愿項目一欄；總管理者也可以填', async () => {
+  const env = setup();
+  const { sup, cook, vol } = await ready(env);
+  const ci = env.ok(await env.post({ action: 'adminLogin', account: '教慈區', password: 'ci-pass' })).token;
+  const list = env.ok(await env.post({ action: 'adminRosterList', token: ci }));
+  assert.deepEqual(list.events.map((e) => e.name), ['烹飪：統班']);
+  const [p1, p2] = cook.positions.map((x) => x.id);
+  env.ok(await env.post({ action: 'adminRosterSave', token: ci, id: cook.id, date: '2026-10-24', key: p1, names: '王小明、測試甲' }));
+  env.ok(await env.post({ action: 'adminRosterSave', token: ci, id: cook.id, date: '2026-10-24', key: p2, names: ['測試乙'] }));
+  let r = await env.post({ action: 'adminRosterSave', token: ci, id: vol.id, date: '2026-10-24', key: '_', names: '測試丙' });
+  assert.match(r.error.message, /只能填自己區/);
+  r = await env.post({ action: 'adminRosterSave', token: ci, id: cook.id, date: '2026-10-25', key: p1, names: '測試丙' });
+  assert.match(r.error.message, /日期不在/);
+  r = await env.post({ action: 'adminRosterSave', token: ci, id: cook.id, date: '2026-10-24', key: '_', names: '測試丙' });
+  assert.match(r.error.message, /了愿項目不對/);
+  // 總管理者幫教全區填（沒有了愿項目：欄位是 _）
+  env.ok(await env.post({ action: 'adminRosterSave', token: sup, id: vol.id, date: '2026-10-24', key: '_', names: '測試丁' }));
+  // 清空一欄
+  env.ok(await env.post({ action: 'adminRosterSave', token: ci, id: cook.id, date: '2026-10-24', key: p2, names: '' }));
+  // 行事曆：統班下面掛兩區，附名單與人數
+  const cal = env.ok(await env.get('action=getCalendar&from=2026-10-01&to=2026-10-31'));
+  const tb = cal.events.find((e) => e.name === '統班');
+  assert.deepEqual(tb.links.map((l) => [l.unit, l.name, l.counts['2026-10-24']]), [['教慈區', '烹飪：統班', 2], ['教全區', '志工團：統班', 1]]);
+  assert.deepEqual(tb.links[0].roster, { '2026-10-24': { [p1]: ['王小明', '測試甲'] } });
+  assert.equal(cal.events.length, 1, '各區的勤務不單獨出現');
+  // 總管理者修改活動：名單保留
+  const again = Object.assign({}, cook, { name: '烹飪：統班', location: '彌勒山' });
+  const saved = env.ok(await env.post({ action: 'adminSave', token: sup, event: again })).event;
+  assert.deepEqual(saved.roster, { '2026-10-24': { [p1]: ['王小明', '測試甲'] } });
+  const log = env.ok(await env.post({ action: 'adminLog', token: sup })).log;
+  assert.ok(log.some((l) => l.action === '填名單' && /教慈區組長/.test(l.name)));
+});
+
+test('行事曆的項目：掛在分壇活動下、沒對應的同名同日合成一張、區活動與測試區不出現', () => {
+  const L = (o) => Object.assign({ source: 'local', category: '勤務', start: '2026-10-24', end: '2026-10-24', startTime: '', location: '', note: '', link: '', kind: '分壇分配', positions: [], roster: {} }, o);
+  const items = buildCalendar([
+    L({ id: 'E-1', unit: '分壇', kind: '', name: '統班' }),
+    L({ id: 'E-2', unit: '教全區', name: '志工團：統班' }),
+    L({ id: 'E-3', unit: '教慈區', name: '烹飪：統班' }),
+    L({ id: 'jq-1', source: 'jiaoquan', unit: '教全區', name: '烹飪團輪值：統班烹飪' }),
+    L({ id: 'E-4', unit: '教力區', name: '宏宗獻供拜香（大典）' }),
+    L({ id: 'E-5', unit: '教發區', name: '宏宗獻供拜香（大典）' }),
+    L({ id: 'E-6', unit: '教美區', kind: '區活動', name: '研究班（範例）' }),
+    L({ id: 'E-7', unit: '測試區', name: '測試勤務' }),
+    L({ id: 'E-8', unit: '分壇', kind: '', name: '人才班（第一年）第 3 次', start: '2026-10-27', end: '2026-10-27' }),
+    L({ id: 'E-9', unit: '教美區', name: '人才班勤務', start: '2026-10-27', end: '2026-10-27' })
+  ], false);
+  const by = (n) => items.find((x) => x.name === n);
+  assert.deepEqual(by('統班').links.map((l) => l.unit), ['教慈區', '教全區']); // 照區的順序；教全區系統的不掛
+  assert.deepEqual(by('宏宗獻供拜香（大典）').links.map((l) => l.unit), ['教力區', '教發區']);
+  assert.deepEqual(by('人才班（第一年）第 3 次').links.map((l) => l.unit), ['教美區']);
+  ['研究班（範例）', '測試勤務', '烹飪團輪值：統班烹飪'].forEach((n) => assert.ok(!by(n), n));
+});
