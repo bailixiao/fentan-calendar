@@ -32,6 +32,7 @@ async function ready(env) {
 test('組長的名字：逗號、頓號、空白都可以隔開，去掉重複；太長擋下', () => {
   assert.deepEqual(cleanRosterNames('王小明、測試甲, 測試乙  王小明\n李小華'), ['王小明', '測試甲', '測試乙', '李小華']);
   assert.deepEqual(cleanRosterNames(['測試甲', ' ', '測試甲']), ['測試甲']);
+  assert.deepEqual(cleanRosterNames('測試甲。測試乙/測試丙／測試丁・測試戊|測試己；測試庚，'), ['測試甲', '測試乙', '測試丙', '測試丁', '測試戊', '測試己', '測試庚']);
   assert.throws(() => cleanRosterNames('一二三四五六七八九十一二三四五六七八九十一'), /太長/);
 });
 

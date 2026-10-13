@@ -219,9 +219,10 @@
             ${ev.start !== ev.end ? `<p class="roster-day"><strong>${Fmt.esc(Fmt.shortDate(d))}</strong></p>` : ''}
             ${fields(ev).map((p) => {
               const names = ((ev.roster || {})[d] || {})[p.id] || [];
-              return `<form class="roster-fill" data-id="${Fmt.esc(ev.id)}" data-date="${d}" data-key="${Fmt.esc(p.id)}">
+              return `<form class="roster-fill" data-id="${Fmt.esc(ev.id)}" data-date="${d}" data-key="${Fmt.esc(p.id)}" data-max="${p.max || ''}">
                 <label class="form-row"><span><strong>${Fmt.esc(p.name)}</strong>${need(p) ? `（${Fmt.esc(need(p))}）` : ''}：已填 <b data-count>${names.length}</b> 人</span>
-                  <textarea class="input textarea" name="names" rows="2" placeholder="名字用、或空白隔開，例：王小明、測試甲">${Fmt.esc(names.join('、'))}</textarea></label>
+                  <textarea class="input textarea" name="names" rows="2" placeholder="名字之間空一格或用、隔開，例：王小明、測試甲">${Fmt.esc(names.join('、'))}</textarea></label>
+                <div class="name-preview" data-preview aria-live="polite"></div>
                 <div class="roster-fill-actions"><button type="submit" class="btn btn-primary btn-small">儲存</button><span class="muted" data-msg></span></div>
               </form>`;
             }).join('')}
@@ -241,6 +242,20 @@
     }
     const sel = view.querySelector('[data-f="unit"]');
     if (sel) sel.addEventListener('change', () => { location.hash = '#/admin/roster/' + encodeURIComponent(sel.value); });
+    // 邊打邊預覽：拆好的名字一個一個顯示（和存檔後一樣），太長、超過人數當場提醒
+    const preview = (f) => {
+      const names = Fmt.splitNames(f.names.value);
+      const max = Number(f.dataset.max) || 0;
+      const long = names.filter((n) => n.length > 20);
+      f.querySelector('[data-preview]').innerHTML = names.length ? `
+        <span class="name-count">會存成 ${names.length} 人：</span>${names.map((n) => `<span class="name-chip${n.length > 20 ? ' is-bad' : ''}">${Fmt.esc(n)}</span>`).join('')}
+        ${long.length ? '<p class="form-error">標紅色的太長了（最多 20 字），是不是兩個名字中間忘了空格或「、」？</p>' : ''}
+        ${max && names.length > max ? `<p class="form-error">超過最多 ${max} 人</p>` : ''}` : '';
+    };
+    view.querySelectorAll('.roster-fill').forEach((f) => {
+      preview(f);
+      f.names.addEventListener('input', () => { preview(f); f.querySelector('[data-msg]').textContent = '還沒儲存'; });
+    });
     view.querySelectorAll('.roster-fill').forEach((f) => f.addEventListener('submit', async (e) => {
       e.preventDefault();
       const msg = f.querySelector('[data-msg]');
@@ -250,6 +265,7 @@
         const names = ((res.event.roster || {})[f.dataset.date] || {})[f.dataset.key] || [];
         f.names.value = names.join('、');
         f.querySelector('[data-count]').textContent = names.length;
+        preview(f);
         msg.textContent = `已儲存（${md(f.dataset.date)}）`;
         CalendarPage.refresh(true);
       } catch (x) {

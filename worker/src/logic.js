@@ -141,9 +141,12 @@ export function publicEvent(ev) {
   };
 }
 
-/** 組長填的名字：字串（逗號、頓號、空白、換行隔開）或陣列 → 去掉空白、重複；每個最多 20 字、最多 100 人 */
+/** 名字之間的分隔：逗號、頓號、分號、句號、斜線、間隔號、直線、空白、換行（前端 js/format.js 的 splitNames 要一樣） */
+export const NAME_SEP = /[,，、;；。．.\/／・·|｜\s　]+/;
+
+/** 組長填的名字：字串（NAME_SEP 隔開）或陣列 → 去掉空白、重複；每個最多 20 字、最多 100 人 */
 export function cleanRosterNames(input) {
-  const list = Array.isArray(input) ? input : String(input || '').split(/[,，、;；\s　]+/);
+  const list = Array.isArray(input) ? input : String(input || '').split(NAME_SEP);
   const out = [];
   list.forEach((n) => {
     const name = String(n || '').replace(/[\s　]/g, '');

@@ -109,5 +109,13 @@
     return rows ? `<ul class="roster">${rows}</ul>` : '';
   }
 
-  window.Fmt = { statusBadge, rosterHtml, esc, toDateStr, parseDate, addDays, datesBetween, rocYear, weekday, shortDate, rocDate, catLabel, timeRange, cardTime, tagsHtml };
+  /** 組長填的名字拆成一個一個、去掉重複（規則同 worker/src/logic.js 的 NAME_SEP、cleanRosterNames） */
+  const NAME_SEP = /[,，、;；。．.\/／・·|｜\s　]+/;
+  function splitNames(text) {
+    const out = [];
+    String(text || '').split(NAME_SEP).forEach((n) => { if (n && out.indexOf(n) === -1) out.push(n); });
+    return out;
+  }
+
+  window.Fmt = { splitNames, statusBadge, rosterHtml, esc, toDateStr, parseDate, addDays, datesBetween, rocYear, weekday, shortDate, rocDate, catLabel, timeRange, cardTime, tagsHtml };
 })();
