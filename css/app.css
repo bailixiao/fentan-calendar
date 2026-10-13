@@ -749,3 +749,5 @@ select.input { appearance: auto; }
 .roster-fill { display: grid; gap: 6px; margin: 10px 0 0; }
 .roster-fill-actions { display: flex; align-items: center; gap: 10px; }
 .linked-item .roster small { margin-left: 4px; }
+.linked-item .fill-btn { margin-top: 8px; font-weight: 700; }
+.roster-card.is-focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }

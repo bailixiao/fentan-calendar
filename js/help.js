@@ -80,7 +80,7 @@
       <p>只會送到有開啟「🔔 手機提醒」的手機。排定的通知在送出前可以取消。每天早晚的活動提醒是自動的，不用另外發。</p>` },
     { cat: '管理者', q: '各區組長怎麼填名單？', img: 'roster-fill.png', a: `
       <ol class="help-steps">
-        <li><span class="help-num">1</span><span>按最下面的「管理者」，帳號選<strong>自己的區</strong>，輸入分壇給的密碼。</span></li>
+        <li><span class="help-num">1</span><span>打開分壇行事曆的活動，在自己區的名單旁邊按「<strong>✏️ 填寫名單</strong>」（或按最下面的「管理者」），帳號選<strong>自己的區</strong>，輸入分壇給的密碼。</span></li>
         <li><span class="help-num">2</span><span>會看到分壇派給這一區的勤務，每一欄填會去的人的名字（用、或空白隔開），按「儲存」。</span></li>
       </ol>
       <p>組長帳號只能填名單，不能改活動。密碼由總管理者在後台「帳號」分頁設定。</p>` },

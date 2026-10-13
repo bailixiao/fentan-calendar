@@ -37,12 +37,18 @@
 
   async function show(el, sub) {
     view = el;
-    if (!Api.isAdmin()) return renderLogin();
     const parts = (sub || '').split('/');
+    // 活動頁「✏️ 填寫名單」：#/admin/fill/<區>/<勤務 id>，沒登入就先登入（帳號選好那一區）
+    const fill = parts[0] === 'fill' ? { unit: decodeURIComponent(parts[1] || ''), id: decodeURIComponent(parts[2] || '') } : null;
+    if (!Api.isAdmin()) return renderLogin('', fill && fill.unit);
     const who = Api.who() || { role: 'super' };
     try {
       // 組長帳號：只有填名單
-      if (who.role === 'region') return renderRoster(who.account);
+      if (who.role === 'region') {
+        const other = fill && fill.unit !== who.account ? `你登入的是${who.account}，只能填${who.account}的名單。要填${fill.unit}的，請先登出再用${fill.unit}的帳號登入。` : '';
+        return renderRoster(who.account, fill && !other ? fill.id : '', other);
+      }
+      if (fill) return renderRoster(fill.unit, fill.id);
       if (parts[0] === 'accounts') return renderAccounts();
       if (parts[0] === 'roster') return renderRoster(decodeURIComponent(parts[1] || '') || editableUnits().filter((u) => u !== window.SITE.fentan)[0]);
       if (parts[0] === 'new') return renderForm(null, 'new');
@@ -80,7 +86,7 @@
 
   // ---------- 登入 ----------
 
-  async function renderLogin(message) {
+  async function renderLogin(message, preset) {
     let accounts = ['總管理者'];
     try { accounts = (await Api.loginAccounts()).accounts; } catch (e) { /* 讀不到：只列總管理者 */ }
     let last = '';
@@ -95,7 +101,7 @@
         ${message ? `<p class="form-error">${Fmt.esc(message)}</p>` : ''}
         <label class="login-field">
           <span>帳號</span>
-          <select class="input login-input" name="account">${accounts.map((a) => `<option${a === last ? ' selected' : ''}>${Fmt.esc(a)}</option>`).join('')}</select>
+          <select class="input login-input" name="account">${accounts.map((a) => `<option${a === (preset && accounts.indexOf(preset) !== -1 ? preset : last) ? ' selected' : ''}>${Fmt.esc(a)}</option>`).join('')}</select>
         </label>
         <label class="login-field">
           <span>密碼</span>
@@ -190,7 +196,7 @@
   }
 
   /** 填名單：組長看自己區的；總管理者可以選任何一區 */
-  async function renderRoster(unit) {
+  async function renderRoster(unit, focusId, notice) {
     const who = Api.who() || { role: 'super' };
     const isRegion = who.role === 'region';
     const head = isRegion
@@ -204,7 +210,7 @@
     const fields = (ev) => (ev.positions && ev.positions.length ? ev.positions : [{ id: '_', name: '名單', min: null, max: null }]);
     const need = (p) => [p.min ? `需要 ${p.min} 人` : '', p.max ? `最多 ${p.max} 人` : ''].filter(Boolean).join('、');
     const evHtml = (ev) => `
-      <article class="roster-card">
+      <article class="roster-card${ev.id === focusId ? ' is-focus' : ''}" id="roster-${Fmt.esc(ev.id)}">
         <h3>${Fmt.esc(ev.name)}</h3>
         <p class="card-meta">${Fmt.esc([ev.start === ev.end ? Fmt.shortDate(ev.start) : `${Fmt.shortDate(ev.start)} – ${Fmt.shortDate(ev.end)}`, Fmt.timeRange(ev), ev.location].filter(Boolean).join('・'))}</p>
         ${ev.note ? `<p class="hint">${Fmt.esc(ev.note)}</p>` : ''}
@@ -221,11 +227,18 @@
             }).join('')}
           </div>`).join('')}
       </article>`;
-    view.innerHTML = head + `
+    view.innerHTML = head + (notice ? `<div class="notice notice-error"><p>${Fmt.esc(notice)}</p></div>` : '') + `
       ${isRegion ? '' : `<label class="form-row"><span>看哪一區</span><select class="input" data-f="unit">${regions.map((u) => `<option${u === unit ? ' selected' : ''}>${Fmt.esc(u)}</option>`).join('')}</select></label>`}
       <p class="hint">這裡是分壇派給${Fmt.esc(unit)}的勤務（7 天前到之後 4 個月）。每一欄填會去的人的名字，按「儲存」，大家打開分壇行事曆的活動就看得到。</p>
       ${data.events.length ? data.events.map(evHtml).join('') : '<p class="panel-empty">目前沒有分壇派給這一區的勤務</p>'}`;
     bindCommon();
+    // 從活動頁來的：捲到那一筆勤務，游標放在第一欄
+    const focusCard = focusId && view.querySelector('.roster-card.is-focus');
+    if (focusCard) {
+      focusCard.scrollIntoView({ block: 'start' });
+      const ta = focusCard.querySelector('textarea');
+      if (ta) ta.focus({ preventScroll: true });
+    }
     const sel = view.querySelector('[data-f="unit"]');
     if (sel) sel.addEventListener('change', () => { location.hash = '#/admin/roster/' + encodeURIComponent(sel.value); });
     view.querySelectorAll('.roster-fill').forEach((f) => f.addEventListener('submit', async (e) => {

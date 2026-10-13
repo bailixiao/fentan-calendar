@@ -66,6 +66,7 @@
             ${total ? `<span class="badge badge-ok">已填 ${total} 人</span>` : '<span class="badge badge-full">還沒填名單</span>'}
           </div>
           <ul class="roster">${rows}</ul>
+          <a class="btn btn-small fill-btn" href="#/admin/fill/${encodeURIComponent(l.unit)}/${encodeURIComponent(l.id)}">✏️ 填寫名單</a>
         </article>`;
     }).join('') + '<p class="hint">名單由各區組長在分壇行事曆填寫。</p>';
   }
