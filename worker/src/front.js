@@ -10,8 +10,8 @@ const CORS = {
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type'
 };
-const MAX_BODY = 100000;
-const PUBLIC_POST = { adminLogin: 1, adminLogout: 1, adminList: 1, adminSave: 1, adminDelete: 1, adminLog: 1, adminBackup: 1 };
+const MAX_BODY = 400000; // 批次匯入最多 300 筆
+const PUBLIC_POST = { adminLogin: 1, adminLogout: 1, adminList: 1, adminSave: 1, adminDelete: 1, adminImport: 1, adminDeleteBatch: 1, adminLog: 1, adminBackup: 1 };
 
 function json(obj, status) {
   return new Response(JSON.stringify(obj), {
@@ -138,7 +138,7 @@ export function createFront(opts) {
       try { body = JSON.parse(text); } catch (e) { throw new AppError('BAD_REQUEST', '資料格式錯誤'); }
       if (!body || !PUBLIC_POST[body.action]) throw new AppError('BAD_REQUEST', '未知的 action：' + (body && body.action ? String(body.action).slice(0, 30) : '（空白）'));
       const res = await opts.callStore(body);
-      if (res && res.ok && (body.action === 'adminSave' || body.action === 'adminDelete')) local.at = 0; // 這個 Worker 的快取馬上失效
+      if (res && res.ok && /^admin(Save|Delete|Import|DeleteBatch)$/.test(body.action)) local.at = 0; // 這個 Worker 的快取馬上失效
       return json(res);
     } catch (err) {
       return fail(err);

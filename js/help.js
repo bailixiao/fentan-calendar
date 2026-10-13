@@ -64,6 +64,14 @@
         <li><span class="help-num">3</span><span>要改就按那一筆的「修改」；同樣的活動換日期，用「另存新的」最快。</span></li>
       </ol>
       <p>每一筆新增、修改、刪除都會記在「操作紀錄」。</p>` },
+    { cat: '管理者', q: '其他區的活動怎麼一次匯入很多筆？', img: 'admin-import.png', a: `
+      <ol class="help-steps">
+        <li><span class="help-num">1</span><span>把各區的活動資料（照片、文字、表格）交給 Claude，Claude 會整理成一個匯入檔（.json）。</span></li>
+        <li><span class="help-num">2</span><span>後台按「匯入」→「📂 選匯入檔」，選那個檔案。</span></li>
+        <li><span class="help-num">3</span><span>看預覽：✓ 是可以匯入的，紅色是有錯的（要請 Claude 改好），「已經有了」的會自動跳過，不會重複。</span></li>
+        <li><span class="help-num">4</span><span>按「匯入 N 筆」，家人們大約 1 分鐘內就看得到。</span></li>
+      </ol>
+      <p>同一次匯入算「一批」。匯錯了，在「匯入」頁下面的「最近匯入的批次」按「刪除這批」，整批一次刪掉。</p>` },
     { cat: '管理者', q: '教全區的活動要輸入嗎？', a: `
       <p>不用。教全區的活動會自動從教全區的系統讀進來，後台也不能選教全區。</p>` },
     { cat: '管理者', q: '怎麼備份資料？', a: `

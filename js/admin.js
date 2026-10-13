@@ -1,4 +1,4 @@
-// 管理後台（#/admin）：登入、活動列表、新增／修改／另存新的／刪除、操作紀錄、下載備份。
+// 管理後台（#/admin）：登入、活動列表、新增／修改／另存新的／刪除、批次匯入（可整批刪除）、操作紀錄、下載備份。
 // 只能改分壇與各區手動輸入的活動；教全區的活動自動讀進來，不在這裡改。權限由伺服器檢查。
 (function () {
   'use strict';
@@ -30,7 +30,7 @@
         <h1 class="admin-title">管理後台</h1>
         <button type="button" class="link-btn" data-act="logout">登出</button>
       </div>
-      <nav class="admin-tabs">${t('#/admin', '活動', 'list')}${t('#/admin/new', '＋ 新增活動', 'new')}${t('#/admin/log', '操作紀錄', 'log')}</nav>`;
+      <nav class="admin-tabs">${t('#/admin', '活動', 'list')}${t('#/admin/new', '＋ 新增活動', 'new')}${t('#/admin/import', '匯入', 'import')}${t('#/admin/log', '操作紀錄', 'log')}</nav>`;
   }
 
   // ---------- 路由 ----------
@@ -48,6 +48,7 @@
         return renderForm(ev, parts[0]);
       }
       if (parts[0] === 'log') return renderLog();
+      if (parts[0] === 'import') return renderImport();
       await renderList();
     } catch (err) {
       handleError(err);
@@ -329,6 +330,166 @@
   function renderMissing() {
     view.innerHTML = tabs('') + '<div class="notice notice-error"><p>找不到這筆活動，可能已經被刪除。</p></div><a class="btn" href="#/admin">回活動列表</a>';
     bindCommon();
+  }
+
+  // ---------- 批次匯入 ----------
+  // 匯入檔由 Claude 整理（JSON：{ title, events: [{ unit, category, name, start, end, startTime, endTime, location, note, link }] }），
+  // 管理者上傳 → 預覽（有錯標紅、和現有重複的會跳過）→ 匯入。同一次匯入是一批，可以整批刪除。
+
+  const dupKey = (e) => [e.unit, e.name, e.start, e.startTime || ''].join('|');
+  const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+  const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+  /** 匯入的一筆：整理欄位並檢查（和伺服器同樣的規則，伺服器還會再檢查一次） */
+  function checkImportRow(raw) {
+    const v = (k) => (raw && raw[k] !== undefined && raw[k] !== null ? String(raw[k]).trim() : '');
+    const ev = { unit: v('unit'), category: v('category'), name: v('name'), start: v('start'), end: v('end') || v('start'), startTime: v('startTime'), endTime: v('endTime'), location: v('location'), note: v('note'), link: v('link') };
+    const errs = [];
+    if (ev.unit === window.SITE.jiaoquan.unit) errs.push('教全區的活動會自動讀進來，不用匯入');
+    else if (editableUnits().indexOf(ev.unit) === -1) errs.push('單位不對');
+    if (window.SITE.categories.indexOf(ev.category) === -1) errs.push('類別要是勤務、道務、教育');
+    if (!ev.name) errs.push('沒有名稱');
+    if (!DATE_RE.test(ev.start)) errs.push('開始日期格式不對');
+    if (!DATE_RE.test(ev.end)) errs.push('結束日期格式不對');
+    else if (ev.end < ev.start) errs.push('結束日期早於開始日期');
+    if (ev.startTime && !TIME_RE.test(ev.startTime)) errs.push('開始時間格式不對');
+    if (ev.endTime && !TIME_RE.test(ev.endTime)) errs.push('結束時間格式不對');
+    if (ev.endTime && !ev.startTime) errs.push('有結束時間卻沒有開始時間');
+    if (ev.link && !/^https:\/\/\S+$/.test(ev.link)) errs.push('連結要 https:// 開頭');
+    if (ev.name.length > 60) errs.push('名稱超過 60 字');
+    return { ev, errs };
+  }
+
+  async function renderImport() {
+    view.innerHTML = tabs('import') + '<p class="panel-empty">載入中⋯</p>';
+    bindCommon();
+    await loadEvents();
+    view.innerHTML = tabs('import') + `
+      <h2 class="admin-sub">批次匯入</h2>
+      <p class="hint">選 Claude 整理好的匯入檔（.json），先預覽，確認沒問題再匯入。同一次匯入算「一批」，匯錯了可以在下面整批刪除。</p>
+      <label class="btn btn-primary btn-block import-pick">📂 選匯入檔<input type="file" accept=".json,application/json" hidden></label>
+      <div id="import-preview"></div>
+      <h2 class="admin-sub import-batches-title">最近匯入的批次</h2>
+      <div id="import-batches"></div>`;
+    bindCommon();
+    view.querySelector('.import-pick input').addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      e.target.value = '';
+      if (!file) return;
+      let data;
+      try {
+        data = JSON.parse(await file.text());
+      } catch (err) {
+        showPreviewError('這個檔案打不開（不是正確的匯入檔）');
+        return;
+      }
+      const rows = Array.isArray(data) ? data : data && Array.isArray(data.events) ? data.events : null;
+      if (!rows || !rows.length) return showPreviewError('匯入檔裡沒有活動');
+      drawPreview(file.name, (data && data.title) || '', rows);
+    });
+    drawBatches();
+  }
+
+  function showPreviewError(msg) {
+    view.querySelector('#import-preview').innerHTML = `<p class="form-error">${Fmt.esc(msg)}</p>`;
+  }
+
+  function drawPreview(fileName, title, rows) {
+    const box = view.querySelector('#import-preview');
+    const existing = new Set(events.map(dupKey));
+    const seen = new Set();
+    const items = rows.map((raw) => {
+      const r = checkImportRow(raw);
+      const key = dupKey(r.ev);
+      r.dup = !r.errs.length && (existing.has(key) || seen.has(key));
+      seen.add(key);
+      return r;
+    });
+    const bad = items.filter((r) => r.errs.length).length;
+    const dup = items.filter((r) => r.dup).length;
+    const ok = items.length - bad - dup;
+    const row = (r, i) => {
+      const e = r.ev;
+      const when = DATE_RE.test(e.start) ? (e.start === e.end || !DATE_RE.test(e.end) ? Fmt.shortDate(e.start) : `${Fmt.shortDate(e.start)} – ${Fmt.shortDate(e.end)}`) : e.start;
+      const meta = [e.startTime ? Fmt.timeRange(e) : '', e.location].filter(Boolean).join('・');
+      const state = r.errs.length ? `<span class="imp-state is-bad">✗ ${Fmt.esc(r.errs.join('、'))}</span>`
+        : r.dup ? '<span class="imp-state is-dup">已經有了，會跳過</span>' : '<span class="imp-state is-ok">✓</span>';
+      return `<li class="imp-row${r.errs.length ? ' is-bad' : r.dup ? ' is-dup' : ''}">
+          <span class="imp-n">${i + 1}</span>
+          <div class="imp-main"><span class="admin-row-date">${Fmt.esc(when)}</span>
+            <span><span class="unit-tag">${Fmt.esc(e.unit || '（沒有單位）')}</span> <strong>${Fmt.esc(e.name || '（沒有名稱）')}</strong></span>
+            ${meta ? `<span class="card-meta">${Fmt.esc(meta)}</span>` : ''}
+            ${state}</div></li>`;
+    };
+    box.innerHTML = `
+      <div class="import-summary">
+        <p><strong>${Fmt.esc(title || fileName)}</strong>（共 ${items.length} 筆）</p>
+        <p>可以匯入 <strong>${ok}</strong> 筆${dup ? `，重複 ${dup} 筆會跳過` : ''}${bad ? `，<span class="imp-bad-text">有錯 ${bad} 筆</span>` : ''}</p>
+        ${bad ? '<p class="imp-bad-text">有錯的要先改好才能匯入，請把錯誤告訴 Claude 重新整理。</p>' : !ok ? '<p>沒有新的活動要匯入（都已經匯入過了）。</p>' : ''}
+      </div>
+      <ol class="imp-list">${items.map(row).join('')}</ol>
+      ${!bad && ok ? `<button type="button" class="btn btn-primary btn-block" data-act="do-import">匯入 ${ok} 筆</button>` : ''}`;
+    const btn = box.querySelector('[data-act="do-import"]');
+    if (btn) btn.addEventListener('click', async () => {
+      busy(true, `匯入 ${ok} 筆⋯`);
+      try {
+        const res = await Api.admin('adminImport', { events: items.filter((r) => !r.dup).map((r) => r.ev) });
+        busy(false);
+        await loadEvents();
+        CalendarPage.refresh(true);
+        box.innerHTML = `<div class="notice notice-success"><p><strong>已匯入 ${res.added} 筆</strong>${res.skipped ? `（重複 ${res.skipped} 筆跳過）` : ''}</p><p>家人們大約 1 分鐘內看得到。</p></div>`;
+        drawBatches();
+      } catch (err) {
+        busy(false);
+        if (err.code === 'UNAUTHORIZED') return renderLogin(err.message);
+        showPreviewError(err.message);
+      }
+    });
+    box.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  }
+
+  function drawBatches() {
+    const box = view.querySelector('#import-batches');
+    const groups = new Map();
+    events.forEach((e) => {
+      if (!e.batch) return;
+      if (!groups.has(e.batch)) groups.set(e.batch, []);
+      groups.get(e.batch).push(e);
+    });
+    const list = [...groups.entries()].sort((a, b) => b[0].localeCompare(a[0])).slice(0, 20);
+    if (!list.length) {
+      box.innerHTML = '<p class="panel-empty">還沒有匯入過</p>';
+      return;
+    }
+    box.innerHTML = `<ul class="admin-list">${list.map(([batch, evs]) => {
+      const order = editableUnits();
+      const units = [...new Set(evs.map((e) => e.unit))].sort((a, b) => order.indexOf(a) - order.indexOf(b));
+      const starts = evs.map((e) => e.start).sort();
+      const at = evs.map((e) => e.createdAt).sort()[0] || '';
+      return `<li class="admin-row">
+          <div class="admin-row-main">
+            <span class="admin-row-date">${Fmt.esc(at.slice(0, 16))} 匯入</span>
+            <strong>${evs.length} 筆：${Fmt.esc(units.slice(0, 6).join('、'))}${units.length > 6 ? ` 等 ${units.length} 個單位` : ''}</strong>
+            <span class="card-meta">${Fmt.esc(Fmt.shortDate(starts[0]))} – ${Fmt.esc(Fmt.shortDate(starts[starts.length - 1]))}</span>
+          </div>
+          <div class="admin-row-actions"><button type="button" class="btn btn-small btn-quiet-danger" data-batch="${Fmt.esc(batch)}" data-n="${evs.length}">刪除這批（${evs.length} 筆）</button></div>
+        </li>`;
+    }).join('')}</ul>`;
+    box.querySelectorAll('[data-batch]').forEach((b) => b.addEventListener('click', async () => {
+      if (!window.confirm(`確定要刪除這一批的 ${b.dataset.n} 筆活動嗎？\n（匯入後修改過的也會一起刪除，不能還原）`)) return;
+      busy(true, '刪除中⋯');
+      try {
+        await Api.admin('adminDeleteBatch', { batch: b.dataset.batch });
+        busy(false);
+        await loadEvents();
+        CalendarPage.refresh(true);
+        drawBatches();
+      } catch (err) {
+        busy(false);
+        if (err.code === 'UNAUTHORIZED') return renderLogin(err.message);
+        window.alert(err.message);
+      }
+    }));
   }
 
   // ---------- 操作紀錄 ----------

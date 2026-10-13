@@ -84,7 +84,23 @@ const SHOTS = [
       if (!document.querySelector('.admin-row')) {
         const f = document.querySelector('.admin-login'); f.password.value = 'test-pass'; f.requestSubmit(); await __wait(800);
       }`,
-    clip: `return __box('.admin-head', '.admin-row:nth-child(2)');` }
+    clip: `return __box('.admin-head', '.admin-row:nth-child(2)');` },
+  { name: 'admin-import', hash: '#/admin/import', js: `
+      if (document.querySelector('.admin-login')) {
+        const f = document.querySelector('.admin-login'); f.password.value = 'test-pass'; f.requestSubmit(); await __wait(800);
+        location.hash = '#/admin/import'; await __wait(800);
+      }
+      // 示範用的匯入檔：兩筆可以匯入、一筆有錯
+      const events = [
+        { unit: '教美區', category: '教育', name: '教美區親子讀經（範例）', start: '2026-11-07', startTime: '09:30', endTime: '11:00', location: '教美區中心' },
+        { unit: '教孝區', category: '道務', name: '教孝區研究班（範例）', start: '2026-11-10', startTime: '19:30', location: '教孝區佛堂' },
+        { unit: '教全區', category: '勤務', name: '教全區打掃（範例）', start: '2026-11-12' }
+      ];
+      const input = document.querySelector('.import-pick input');
+      const dt = new DataTransfer();
+      dt.items.add(new File([JSON.stringify({ title: '十一月各區活動（範例）', events })], 'example.json', { type: 'application/json' }));
+      input.files = dt.files; input.dispatchEvent(new Event('change')); await __wait(800);`,
+    clip: `await __wait(800); scrollTo({ top: 0, behavior: 'instant' }); return __box('.admin-sub', '.imp-list');` }
 ];
 
 async function main() {

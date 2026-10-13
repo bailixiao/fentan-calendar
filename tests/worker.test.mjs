@@ -264,3 +264,56 @@ test('CORS 與未知動作', async () => {
   const bad = await (await front.handle(new Request('http://x/', { method: 'POST', body: '{not json' }))).json();
   assert.equal(bad.error.code, 'BAD_REQUEST');
 });
+
+test('批次匯入：全部通過才寫入、跳過重複、整批刪除', async () => {
+  const env = setup();
+  const token = await login(env);
+  await env.post({ action: 'adminSave', token, event: sampleEvent({ unit: '教真區', name: '教真區研究班', start: '2026-10-21', startTime: '19:30', endTime: '' }) });
+  // 有一筆錯：整批不存，錯誤訊息標出第幾筆
+  let r = await env.post({ action: 'adminImport', token, events: [sampleEvent({ unit: '教善區' }), sampleEvent({ unit: '教全區' })] });
+  assert.equal(r.error.code, 'BAD_REQUEST');
+  assert.match(r.error.message, /第 2 筆/);
+  r = await env.post({ action: 'adminBackup', token });
+  assert.equal(r.data.events.length, 1);
+  // 正確的：重複的跳過（同單位、名稱、日期、時間），同一批內重複的也只留一筆
+  r = await env.post({ action: 'adminImport', token, events: [
+    sampleEvent({ unit: '教善區', name: '教善區讀經班', start: '2026-10-22' }),
+    sampleEvent({ unit: '教善區', name: '教善區讀經班', start: '2026-10-22' }),
+    sampleEvent({ unit: '教真區', name: '教真區研究班', start: '2026-10-21', startTime: '19:30', endTime: '' }),
+    sampleEvent({ unit: '教理區', name: '教理區法會', start: '2026-10-25' })
+  ] });
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.data.added, 2);
+  assert.equal(r.data.skipped, 2);
+  const batch = r.data.batch;
+  assert.match(batch, /^B-\d{14}-[0-9a-f]{4}$/);
+  // 家人們看得到，但看不到 batch
+  const pub = await env.get('action=getEvents&from=2026-10-01&to=2026-10-31');
+  assert.equal(pub.data.events.filter((e) => e.source === 'local').length, 3);
+  assert.ok(pub.data.events.every((e) => e.batch === undefined));
+  // 修改後還是同一批
+  const list = (await env.post({ action: 'adminList', token })).data.events;
+  const one = list.find((e) => e.name === '教理區法會');
+  await env.post({ action: 'adminSave', token, event: Object.assign({}, one, { name: '教理區法會（改）' }) });
+  // 整批刪除：只刪這一批
+  r = await env.post({ action: 'adminDeleteBatch', token, batch });
+  assert.equal(r.data.deleted, 2);
+  r = await env.post({ action: 'adminList', token });
+  assert.deepEqual(r.data.events.map((e) => e.name), ['教真區研究班']);
+  r = await env.post({ action: 'adminDeleteBatch', token, batch });
+  assert.equal(r.error.code, 'NOT_FOUND');
+  r = await env.post({ action: 'adminLog', token });
+  assert.deepEqual(r.data.log.slice(0, 3).map((l) => l.action), ['整批刪除', '修改', '匯入']);
+  assert.equal(r.data.log[2].name, '2 筆活動');
+});
+
+test('批次匯入：沒登入不行、空的不行、超過 300 筆不行', async () => {
+  const env = setup();
+  let r = await env.post({ action: 'adminImport', events: [sampleEvent()] });
+  assert.equal(r.error.code, 'UNAUTHORIZED');
+  const token = await login(env);
+  r = await env.post({ action: 'adminImport', token, events: [] });
+  assert.equal(r.error.code, 'BAD_REQUEST');
+  r = await env.post({ action: 'adminImport', token, events: Array.from({ length: 301 }, () => sampleEvent()) });
+  assert.match(r.error.message, /300/);
+});

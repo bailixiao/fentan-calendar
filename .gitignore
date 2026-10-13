@@ -3,3 +3,6 @@ worker/node_modules/
 worker/.wrangler/
 .dev.vars
 *.log
+
+# 各區活動的匯入檔（可能有各區的內部資料，不放進公開的儲存庫）
+imports/

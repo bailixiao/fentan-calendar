@@ -113,6 +113,7 @@ Durable Object 的 SQLite：
 | location | 地點（最多 60 字） |
 | note | 說明（最多 1000 字） |
 | link | 相關連結（選填，只接受 `https://`） |
+| batch | 批次匯入的批號（`B-yyyyMMddHHmmss-四碼`）；手動新增的沒有。修改後保留。家人們看不到 |
 | createdAt、updatedAt | 台北時間 `yyyy-MM-dd HH:mm:ss` |
 
 **log（操作紀錄）**：時間、動作（新增／修改／刪除）、活動名稱與日期、單位。不記人名。
@@ -132,6 +133,8 @@ Durable Object 的 SQLite：
 | `adminList` | POST `token` | 全部手動活動（後台列表） |
 | `adminSave` | POST `token`、`event`（有 `id` 為修改，沒有為新增） | 檢查欄位，回存好的活動 |
 | `adminDelete` | POST `token`、`id` | |
+| `adminImport` | POST `token`、`events`（最多 300 筆） | 批次匯入：每筆照 adminSave 的規則檢查，**有一筆錯就整批不存**（錯誤訊息列出第幾筆）；和現有活動重複（同單位、名稱、開始日期、開始時間）的跳過。回 `{ batch, added, skipped }` |
+| `adminDeleteBatch` | POST `token`、`batch` | 整批刪除（含匯入後修改過的） |
 | `adminLog` | POST `token` | 最近 200 筆操作紀錄 |
 | `adminBackup` | POST `token` | 全部活動＋操作紀錄（下載備份用） |
 
@@ -158,8 +161,9 @@ Durable Object 的 SQLite：
 1. **登入**：只有密碼欄（顯示／隱藏密碼）。
 2. **活動列表**：預設今天起的活動，可切換「已過去的」；依單位篩選、搜尋名稱；每筆有「修改」「另存新的」「刪除」（刪除要確認）。
 3. **新增／修改**：單位（分壇＋15 區，沒有教全區）、類別、名稱、開始日期、結束日期（預設同一天）、開始時間、結束時間、地點、說明、相關連結。存檔前在前端檢查，伺服器再檢查一次。
-4. **操作紀錄**：最近 200 筆。
-5. **下載備份**：下載 `fentan-calendar-backup-yyyyMMdd.json`（全部活動＋操作紀錄）。
+4. **批次匯入**（`#/admin/import`，2026/10/13）：其他區的活動由 Claude 整理成匯入檔（JSON：`{ title, events: [{ unit, category, name, start, end, startTime, endTime, location, note, link }] }`），管理者上傳 → 預覽（✓ 可以匯入、紅色有錯並寫出原因、「已經有了」會跳過）→ 沒有錯才出現「匯入 N 筆」。下面列出「最近匯入的批次」（時間、筆數、單位、日期範圍），可以「刪除這批」。匯入檔放在 `imports/`（不進儲存庫）。
+5. **操作紀錄**：最近 200 筆（匯入、整批刪除各記一筆，寫筆數和單位）。
+6. **下載備份**：下載 `fentan-calendar-backup-yyyyMMdd.json`（全部活動＋操作紀錄）。
 
 ## 10. PWA 與快取
 
