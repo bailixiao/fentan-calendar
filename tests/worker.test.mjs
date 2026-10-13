@@ -193,18 +193,18 @@ test('getEvents：合併手動與教全區的活動，依日期排序，只回�
   assert.deepEqual(r2.data.events.map((e) => e.name), ['跨年活動']);
 });
 
-test('getEvents：教全區依年份快取 5 分鐘、手動活動快取 60 秒', async () => {
+test('getEvents：教全區依年份快取 1 分鐘、手動活動快取 60 秒', async () => {
   const env = setup();
   await env.get('action=getEvents&from=2026-01-01&to=2026-12-31');
   await env.get('action=getEvents&from=2026-03-01&to=2026-03-31');
   assert.equal(env.calls.jq.length, 1);
   assert.equal(env.calls.store, 1);
-  env.clock.add(61e3);
+  env.clock.add(30e3);
+  await env.get('action=getEvents&from=2026-03-01&to=2026-03-31');
+  assert.equal(env.calls.jq.length, 1); // 1 分鐘內不再讀
+  env.clock.add(31e3);
   await env.get('action=getEvents&from=2026-03-01&to=2026-03-31');
   assert.equal(env.calls.store, 2);
-  assert.equal(env.calls.jq.length, 1);
-  env.clock.add(300e3);
-  await env.get('action=getEvents&from=2026-03-01&to=2026-03-31');
   assert.equal(env.calls.jq.length, 2); // 過期：背景再讀一次
   await env.get('action=getEvents&from=2026-12-20&to=2027-01-10'); // 跨年：多讀 2027
   assert.equal(env.calls.jq.length, 3);

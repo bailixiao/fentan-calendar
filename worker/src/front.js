@@ -37,7 +37,7 @@ export function createFront(opts) {
   const now = opts.now || (() => Date.now());
   const fetchFn = opts.fetch || ((...a) => fetch(...a));
   const localTtl = opts.localTtl !== undefined ? opts.localTtl : 60e3;
-  const jqTtl = opts.jqTtl !== undefined ? opts.jqTtl : 300e3;
+  const jqTtl = opts.jqTtl !== undefined ? opts.jqTtl : 60e3; // 2026/10/13：5 分鐘改 1 分鐘，報名後更快看到
   const jqTimeout = opts.jqTimeout || 8000;
 
   let pushKey = null;
@@ -121,7 +121,7 @@ export function createFront(opts) {
     const key = test ? 'test' : 'open';
     let e = regionFeed.get(key);
     if (!e) { e = { at: 0, items: null, promise: null }; regionFeed.set(key, e); }
-    if (e.items && now() - e.at < 120e3) return e.items;
+    if (e.items && now() - e.at < 60e3) return e.items;
     if (!e.promise) {
       const url = SITE.regionSystem.api + '?' + new URLSearchParams(Object.assign({ action: 'feed', from, to }, test ? { test: '1' } : {}));
       const ctrl = new AbortController();
@@ -212,7 +212,7 @@ export function createFront(opts) {
           return Object.assign(base, { open: true, day: day || null, link: `${SITE.jiaoquan.site}#/duty/${encodeURIComponent(l.id.slice(3))}?date=${date}` });
         }
         if (open && !open.has(l.unit)) return Object.assign(base, { open: false });
-        const ev = await regionGet({ action: 'getEvent', region: l.unit, id: 'F-' + l.id }, 60e3);
+        const ev = await regionGet({ action: 'getEvent', region: l.unit, id: 'F-' + l.id }, 30e3);
         const d = (ev.days || []).find((x) => x.date === date);
         return Object.assign(base, {
           open: true,
@@ -232,7 +232,7 @@ export function createFront(opts) {
     const m = id.match(/^jq-([\w-]{1,60})$/);
     if (!m) throw new AppError('BAD_REQUEST', '活動代號不對');
     const hit = rosters.get(m[1]);
-    if (hit && now() - hit.at < 120e3) return hit.data;
+    if (hit && now() - hit.at < 30e3) return hit.data;
     const detail = await jqGet({ action: 'getDuty', id: m[1] });
     const data = summaryOf(detail);
     if (rosters.size > 500) rosters.clear();

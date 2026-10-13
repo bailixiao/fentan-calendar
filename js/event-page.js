@@ -65,7 +65,7 @@
           ${body}
           ${l.open && l.link ? `<a class="link-btn" href="${Fmt.esc(l.link)}" target="_blank" rel="noopener">${l.source === 'jiaoquan' ? '到教全區看' : '到該區的報名頁'} ↗</a>` : ''}
         </article>`;
-    }).join('') + '<p class="hint">各區在各區自己的報名系統報名，這裡自動更新（約 2 分鐘）。</p>';
+    }).join('') + '<p class="hint">各區在各區自己的報名系統報名，這裡自動更新（約 1 分鐘內）。</p>';
   }
 
   async function loadLinked(view, ev, date, t) {
