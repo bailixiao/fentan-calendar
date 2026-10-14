@@ -427,7 +427,8 @@
     if (mode === 'copy') ev.positions = (ev.positions || []).map((p) => ({ name: p.name, min: p.min, max: p.max }));
     const multi = mode !== 'edit';
     const fentan = window.SITE.fentan;
-    const regions = editableUnits().filter((u) => u !== fentan);
+    // 派給區的勾選不列測試區（已經是測試區的那筆，修改時仍可用單位選單）
+    const regions = editableUnits().filter((u) => u !== fentan && u !== window.SITE.testRegion);
     const title = mode === 'edit' ? '修改活動' : mode === 'copy' ? '另存成新的活動' : '新增活動';
     const opt = (list, value, label) => list.map((v) => `<option value="${Fmt.esc(v)}"${v === value ? ' selected' : ''}>${Fmt.esc(label ? label(v) : v)}</option>`).join('');
     const isRegion = ev.unit && ev.unit !== fentan;
@@ -456,7 +457,6 @@
           ${unitBlock}
           ${ev.kind === '區活動' ? '<p class="hint kind-note">這筆是「區自己的活動」（例如範例資料），只記在後台，行事曆上不顯示。</p>' : '<p class="hint kind-note">派給區的是「分壇分配的勤務」，由各區組長在分壇行事曆填名單。</p>'}
           <label class="form-row"><span>類別</span><select class="input" name="category">${opt(window.SITE.categories, ev.category, Fmt.catLabel)}</select></label>
-          <p class="hint">「${Fmt.esc(window.SITE.testRegion)}」只在後台出現，用來試填名單，行事曆上不顯示。</p>
         </fieldset>
         <fieldset class="form-block">
           <legend>活動</legend>
@@ -509,7 +509,7 @@
       if (b.hasAttribute('data-rm')) b.closest('.pos-row').remove();
       // 全選＝16 區（測試區不算）；全不選＝全部取消
       if (b.dataset.act === 'check-all' || b.dataset.act === 'check-none') {
-        form.querySelectorAll('[name="units"]').forEach((c) => { c.checked = b.dataset.act === 'check-all' && c.value !== window.SITE.testRegion; });
+        form.querySelectorAll('[name="units"]').forEach((c) => { c.checked = b.dataset.act === 'check-all'; });
       }
     });
     form.addEventListener('submit', async (e) => {
