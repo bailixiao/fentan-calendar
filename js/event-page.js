@@ -46,9 +46,69 @@
         ${row('截止', ev.deadline ? `${Fmt.esc(Fmt.shortDate(ev.deadline))}${today() > ev.deadline ? '　<span class="muted">已截止</span>' : ''}` : '')}
       </dl>
       ${ev.note ? `<section class="detail-section"><h2>說明</h2><p class="detail-desc">${Fmt.esc(ev.note).replace(/\n/g, '<br>')}</p></section>` : ''}
+      ${ev.signup ? attendHtml(ev) : ''}
       ${hasLinks ? `<section class="detail-section"><h2>各區名單<span class="h2-sub">${Fmt.esc(Fmt.shortDate(date))}</span></h2>${linkedHtml(ev, date)}</section>` : ''}
       ${ev.link ? `<div class="detail-actions"><a class="btn btn-block btn-go" href="${Fmt.esc(ev.link)}" target="_blank" rel="noopener">打開相關連結 ↗</a></div>` : ''}
       <a class="btn btn-block back-btn" href="#/">‹ 回行事曆</a>`;
+  }
+
+  /** 出席名單表（規格第 9-6 節）：上面一區一行（併區合成一行），下面是分工，最後合計、備註。回傳 { rows, duty, total, title } */
+  function sheetOf(ev, date) {
+    const rows = window.SITE.attendRows.map(([label, units]) => {
+      const d = (ev.attend || {})[label] || { names: [], escort: [], note: '' };
+      const text = [d.names.join('、'), d.escort.length ? '陪班：' + d.escort.join('、') : '', d.note].filter(Boolean).join('，');
+      return { label, units, text, n: d.names.length + d.escort.length };
+    });
+    const teams = window.SITE.teams || [];
+    const short = (units) => units.map((u) => u.replace(/^教|區$/g, '')).join('、');
+    const pickText = (p) => {
+      if (p.indexOf('u:') === 0) return p.slice(2);
+      const [, tn, gk] = p.split(':');
+      const t = teams.find((x) => x.name === tn);
+      const g = t && t.groups.find((x) => x[0] === gk);
+      if (!g) return '';
+      return t.post === '（併區）' ? g[0] : `${t.name}${t.pre}${g[0]}${t.post}（${short(g[1])}）`;
+    };
+    const duties = ev.duties || [];
+    const works = ['視聽', '交通', '勤務', '導覽', '烹飪']; // 照長青班出席名單的順序
+    duties.forEach((d) => { if (works.indexOf(d.work) === -1) works.push(d.work); });
+    const duty = works.map((w) => {
+      const mine = duties.filter((d) => d.work === w);
+      const text = mine.map((d) => d.picks.map(pickText).filter(Boolean).join('、')).join('；');
+      const ids = mine.map((d) => d.id);
+      const n = (ev.links || []).filter((l) => ids.indexOf(l.dutyId) !== -1).reduce((s, l) => s + ((l.counts || {})[date] || 0), 0);
+      return { label: w, text, n };
+    });
+    const total = rows.concat(duty).reduce((s, r) => s + r.n, 0);
+    const ymd = date.split('-');
+    const title = `${Number(ymd[0]) - 1911}/${ymd[1]}/${ymd[2]} ${ev.name}出席名單`;
+    return { rows, duty, total, title };
+  }
+
+  function sheetText(ev, date) {
+    const s = sheetOf(ev, date);
+    const line = (r) => `${r.label}：${r.text}${r.n ? `（${r.n}）` : ''}`;
+    return [s.title, ...s.rows.map(line), '', ...s.duty.map(line), '', `合計 ${s.total} 人`].concat(ev.note ? ['', ev.note] : []).join('\n');
+  }
+
+  function attendHtml(ev) {
+    const date = ev.start;
+    const s = sheetOf(ev, date);
+    const closed = ev.deadline && today() > ev.deadline;
+    const tr = (r, fill) => `<tr><th scope="row">${Fmt.esc(r.label)}</th><td>${r.text ? Fmt.esc(r.text) : '<span class="muted">—</span>'}${fill && !closed ? ` <a class="sheet-fill" href="#/admin/fill/${encodeURIComponent(r.units[0])}/${encodeURIComponent(ev.id)}" aria-label="填${Fmt.esc(r.label)}的出席名單">✏️</a>` : ''}</td><td class="num">${r.n || ''}</td></tr>`;
+    return `
+      <section class="detail-section sheet">
+        <h2>出席名單<span class="h2-sub">共 ${s.total} 人</span></h2>
+        <div class="sheet-wrap"><table class="sheet-table">
+          <caption>${Fmt.esc(s.title)}</caption>
+          <tbody>${s.rows.map((r) => tr(r, true)).join('')}</tbody>
+          <tbody class="sheet-duty">${s.duty.map((r) => tr(r, false)).join('')}</tbody>
+          <tfoot><tr><th scope="row">合計</th><td></td><td class="num">${s.total}</td></tr></tfoot>
+        </table></div>
+        ${ev.note ? `<p class="sheet-note">${Fmt.esc(ev.note).replace(/\n/g, '<br>')}</p>` : ''}
+        <div class="sheet-actions"><button type="button" class="btn" data-act="copy-sheet">📋 複製文字（貼到 LINE）</button><span class="muted" data-copied></span></div>
+        <p class="hint">${closed ? '名單已截止。' : '各區組長按自己那一行的 ✏️ 填出席、陪班名單。'}</p>
+      </section>`;
   }
 
   /** 各區名單：每一筆派給區的勤務一段，名單是那一區組長填的（規格第 9-4 節） */
@@ -81,6 +141,15 @@
     const render = (ev) => {
       const d = date && date >= ev.start && date <= ev.end ? date : ev.start;
       view.innerHTML = html(ev, d);
+      view.onclick = async (e) => {
+        const b = e.target.closest('[data-act="copy-sheet"]');
+        if (!b) return;
+        const text = sheetText(ev, ev.start);
+        const msg = view.querySelector('[data-copied]');
+        try { await navigator.clipboard.writeText(text); msg.textContent = '已複製，可以貼到 LINE'; } catch (x) {
+          window.prompt('請長按全選、複製：', text);
+        }
+      };
     };
     const ev = CalendarPage.findEvent(id);
     if (ev) { render(ev); return; }

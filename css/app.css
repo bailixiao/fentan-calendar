@@ -772,6 +772,21 @@ select.input { appearance: auto; }
 .duty-sum { margin: 0; font-weight: 700; overflow-wrap: anywhere; }
 .duty-sum small { font-weight: 400; color: var(--ink-2); }
 .duty-picks summary { min-height: var(--tap); display: flex; align-items: center; cursor: pointer; color: var(--accent); font-weight: 700; }
+.check-row { display: flex; align-items: center; gap: 10px; min-height: var(--tap); font-weight: 700; }
+.check-row input { width: 20px; height: 20px; accent-color: var(--accent); flex-shrink: 0; }
+.attend-tag { margin-left: 8px; padding: 1px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-family: var(--sans, inherit); font-size: .8rem; font-weight: 700; vertical-align: middle; }
+.attend-fill { display: grid; gap: 6px; margin-top: 8px; }
+.sheet-wrap { overflow-x: auto; }
+.sheet-table { width: 100%; border-collapse: collapse; background: var(--card); font-size: .95rem; }
+.sheet-table caption { text-align: left; font-weight: 700; padding: 0 0 6px; }
+.sheet-table th, .sheet-table td { border: 1px solid var(--line); padding: 6px 8px; vertical-align: top; text-align: left; overflow-wrap: anywhere; }
+.sheet-table th { width: 4.5em; white-space: nowrap; font-weight: 700; }
+.sheet-table .num { width: 3em; text-align: center; font-variant-numeric: tabular-nums; }
+.sheet-table .sheet-duty th { background: var(--paper-2); }
+.sheet-table tfoot th, .sheet-table tfoot td { font-weight: 700; background: var(--paper-2); }
+.sheet-fill { text-decoration: none; }
+.sheet-note { margin: 8px 0 0; padding: 8px 12px; border: 1px solid var(--line); border-radius: var(--radius); color: var(--accent); font-weight: 700; }
+.sheet-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
 .check-all { display: flex; gap: 8px; margin: 4px 0 8px; }
 .deadline { margin: 6px 0 0; font-weight: 700; color: var(--ink-2); }
 .deadline.is-closed { color: var(--accent); }

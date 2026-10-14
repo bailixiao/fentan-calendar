@@ -128,7 +128,13 @@ export function createStoreApp(store, opts) {
     const events = store.allEvents().filter((e) => e.unit === unit && e.kind !== '區活動' && e.end >= from && e.start <= to);
     const dl = deadlinesOf(store.allEvents().map(publicEvent));
     const today = taipeiDate(now());
-    return { unit, today, events: sortEvents(events).map((e) => Object.assign(publicEvent(e), { deadline: dl[e.id] || e.deadline || '', closed: !!dl[e.id] && today > dl[e.id] })) };
+    // 各區報名出席的班：這一區在哪一行（併區的兩區同一行）
+    const row = SITE.attendRows.find((r) => r[1].indexOf(unit) !== -1);
+    const attend = row ? store.allEvents().filter((e) => e.unit === SITE.fentan && e.signup === true && e.end >= from && e.start <= to).map((e) => ({
+      id: e.id, name: e.name, start: e.start, end: e.end, startTime: e.startTime || '', endTime: e.endTime || '', location: e.location || '', note: e.note || '',
+      row: row[0], data: (e.attend || {})[row[0]] || { names: [], escort: [], note: '' }, deadline: e.deadline || '', closed: !!e.deadline && today > e.deadline
+    })) : [];
+    return { unit, today, attend: sortEvents(attend), events: sortEvents(events).map((e) => Object.assign(publicEvent(e), { deadline: dl[e.id] || e.deadline || '', closed: !!dl[e.id] && today > dl[e.id] })) };
   }
 
   function adminRosterSave(body, who) {
@@ -153,6 +159,27 @@ export function createStoreApp(store, opts) {
     ev.roster = roster;
     store.putEvent(ev);
     store.addLog({ time: taipeiStamp(now()), action: '填名單', unit: ev.unit, name: `${ev.name}：${names.length} 人（${who ? who + '組長' : SUPER}）`, start: date, end: date, id: ev.id });
+    return { event: publicEvent(ev) };
+  }
+
+  /** 組長填出席名單（規格第 9-6 節）：出席、陪班（算人數）、備註 */
+  function adminAttendSave(body, who) {
+    const ev = typeof body.id === 'string' ? store.getEvent(body.id) : null;
+    if (!ev || ev.unit !== SITE.fentan || ev.signup !== true) throw new AppError('NOT_FOUND', '找不到這個班，或這個班沒有開放各區報名出席');
+    const row = SITE.attendRows.find((r) => r[0] === body.row);
+    if (!row) throw new AppError('BAD_REQUEST', '區不對');
+    if (who && row[1].indexOf(who) === -1) throw new AppError('UNAUTHORIZED', '只能填自己區的名單');
+    if (who && ev.deadline && taipeiDate(now()) > ev.deadline) {
+      throw new AppError('BAD_REQUEST', `已經過了截止日期（${Number(ev.deadline.slice(5, 7))}/${Number(ev.deadline.slice(8, 10))}），要改名單請找分壇`);
+    }
+    const note = typeof body.note === 'string' ? body.note.replace(/\s+/g, ' ').trim() : '';
+    if (note.length > 100) throw new AppError('BAD_REQUEST', '備註最多 100 字');
+    const data = { names: cleanRosterNames(body.names), escort: cleanRosterNames(body.escort), note };
+    const attend = Object.assign({}, ev.attend || {});
+    if (data.names.length || data.escort.length || data.note) attend[row[0]] = data; else delete attend[row[0]];
+    ev.attend = attend;
+    store.putEvent(ev);
+    store.addLog({ time: taipeiStamp(now()), action: '填出席', unit: row[1].join('、'), name: `${ev.name}：${data.names.length + data.escort.length} 人（${who ? who + '組長' : SUPER}）`, start: ev.start, end: ev.end, id: ev.id });
     return { event: publicEvent(ev) };
   }
 
@@ -193,7 +220,7 @@ export function createStoreApp(store, opts) {
     if (id) {
       const old = store.getEvent(id);
       if (!old) throw new AppError('NOT_FOUND', '找不到這筆活動，可能已經被刪除');
-      saved = Object.assign({ id, createdAt: old.createdAt }, clean, old.batch ? { batch: old.batch } : {}, old.roster ? { roster: old.roster } : {},
+      saved = Object.assign({ id, createdAt: old.createdAt }, clean, old.batch ? { batch: old.batch } : {}, old.roster ? { roster: old.roster } : {}, old.attend && clean.unit === SITE.fentan ? { attend: old.attend } : {},
         old.parentId && clean.unit !== SITE.fentan ? { parentId: old.parentId, dutyId: old.dutyId || '' } : {}, { updatedAt: stamp });
       store.putEvent(saved);
       log('修改', saved);
@@ -346,11 +373,12 @@ export function createStoreApp(store, opts) {
     adminSetAccount,
     adminRosterList,
     adminRosterSave,
+    adminAttendSave,
     ...push.actions
   };
   const needsLogin = Object.assign({ adminList: 1, adminSave: 1, adminDelete: 1, adminImport: 1, adminDeleteBatch: 1, adminLog: 1, adminBackup: 1,
-    adminAccounts: 1, adminSetAccount: 1, adminRosterList: 1, adminRosterSave: 1 }, push.needsLogin);
-  const REGION_OK = { adminRosterList: 1, adminRosterSave: 1 }; // 組長帳號只能做這些
+    adminAccounts: 1, adminSetAccount: 1, adminRosterList: 1, adminRosterSave: 1, adminAttendSave: 1 }, push.needsLogin);
+  const REGION_OK = { adminRosterList: 1, adminRosterSave: 1, adminAttendSave: 1 }; // 組長帳號只能做這些
 
   async function call(body) {
     try {

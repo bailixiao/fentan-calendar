@@ -19,6 +19,7 @@ test('前後端的名稱、區名、類別一致', () => {
   assert.equal(f.fentan, SITE.fentan);
   assert.deepEqual([...f.units], SITE.units);
   assert.deepEqual([...f.categories], SITE.categories);
+  assert.deepEqual(JSON.parse(JSON.stringify(f.attendRows)), SITE.attendRows);
   assert.equal(f.jiaoquan.unit, SITE.jiaoquan.unit);
   assert.equal(f.jiaoquan.site, SITE.jiaoquan.site);
   assert.deepEqual(Object.keys(f.categoryLabels), SITE.categories);

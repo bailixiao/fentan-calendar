@@ -184,6 +184,34 @@ test('以前用名稱掛上的各區勤務：帶進分工後改用 parentId，�
   assert.ok(!list.some((e) => e.id === b.id), 'drop 的刪掉');
 });
 
+test('各區報名出席：開了才能填；併區兩區都可以填同一行；過了截止不能改', async () => {
+  const env = setup();
+  const sup = env.ok(await env.post({ action: 'adminLogin', password: 'test-pass' })).token;
+  const cls = env.ok(await env.post({ action: 'adminSave', token: sup, event: E({ unit: '分壇', category: '教育', name: '長青班', signup: true, deadline: '2026-10-20', note: '上午 10 點上課' }) })).event;
+  const other = env.ok(await env.post({ action: 'adminSave', token: sup, event: E({ unit: '分壇', category: '教育', name: '別的班' }) })).event;
+  for (const u of ['教慈區', '教理區', '教真區']) env.ok(await env.post({ action: 'adminSetAccount', token: sup, unit: u, password: 'pass-' + u }));
+  const ci = env.ok(await env.post({ action: 'adminLogin', account: '教慈區', password: 'pass-教慈區' })).token;
+  const li = env.ok(await env.post({ action: 'adminLogin', account: '教理區', password: 'pass-教理區' })).token;
+  const list = env.ok(await env.post({ action: 'adminRosterList', token: ci }));
+  assert.deepEqual(list.attend.map((a) => [a.name, a.row]), [['長青班', '教慈/理']]);
+  env.ok(await env.post({ action: 'adminAttendSave', token: ci, id: cls.id, row: '教慈/理', names: '測試甲 測試乙', escort: '王小明', note: '載道親：李小華' }));
+  const res = env.ok(await env.post({ action: 'adminAttendSave', token: li, id: cls.id, row: '教慈/理', names: '測試甲、測試乙、測試丙', escort: '王小明', note: '' }));
+  assert.deepEqual(res.event.attend['教慈/理'], { names: ['測試甲', '測試乙', '測試丙'], escort: ['王小明'], note: '' });
+  let r = await env.post({ action: 'adminAttendSave', token: ci, id: cls.id, row: '教真', names: '測試丁' });
+  assert.match(r.error.message, /只能填自己區/);
+  r = await env.post({ action: 'adminAttendSave', token: ci, id: other.id, row: '教慈/理', names: '測試丁' });
+  assert.match(r.error.message, /沒有開放/);
+  // 修改活動：出席名單留著
+  const again = env.ok(await env.post({ action: 'adminSave', token: sup, event: Object.assign({}, cls, { location: '致中樓 3 樓' }) })).event;
+  assert.equal(again.attend['教慈/理'].names.length, 3);
+  const cal = env.ok(await env.get('action=getCalendar&from=2026-10-01&to=2026-10-31'));
+  assert.equal(cal.events.find((e) => e.name === '長青班').signup, true);
+  env.clock.add(8 * 86400e3);
+  const ci2 = env.ok(await env.post({ action: 'adminLogin', account: '教慈區', password: 'pass-教慈區' })).token;
+  r = await env.post({ action: 'adminAttendSave', token: ci2, id: cls.id, row: '教慈/理', names: '' });
+  assert.match(r.error.message, /截止/);
+});
+
 test('行事曆的項目：掛在分壇活動下、沒對應的同名同日合成一張、區活動與測試區不出現', () => {
   const L = (o) => Object.assign({ source: 'local', category: '勤務', start: '2026-10-24', end: '2026-10-24', startTime: '', location: '', note: '', link: '', kind: '分壇分配', positions: [], roster: {} }, o);
   const items = buildCalendar([

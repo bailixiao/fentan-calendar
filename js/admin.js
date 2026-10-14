@@ -45,7 +45,9 @@
     try {
       // 組長帳號：只有填名單
       if (who.role === 'region') {
-        const other = fill && fill.unit !== who.account ? `你登入的是${who.account}，只能填${who.account}的名單。要填${fill.unit}的，請先登出再用${fill.unit}的帳號登入。` : '';
+        // 併區（例：教慈/理）的兩區是同一行，兩區的組長都可以
+        const sameRow = fill && window.SITE.attendRows.some((r) => r[1].indexOf(fill.unit) !== -1 && r[1].indexOf(who.account) !== -1);
+        const other = fill && fill.unit !== who.account && !sameRow ? `你登入的是${who.account}，只能填${who.account}的名單。要填${fill.unit}的，請先登出再用${fill.unit}的帳號登入。` : '';
         return renderRoster(who.account, fill && !other ? fill.id : '', other);
       }
       if (fill) return renderRoster(fill.unit, fill.id);
@@ -209,6 +211,24 @@
     const regions = editableUnits().filter((u) => u !== window.SITE.fentan);
     const fields = (ev) => (ev.positions && ev.positions.length ? ev.positions : [{ id: '_', name: '名單', min: null, max: null }]);
     const need = (p) => [p.min ? `需要 ${p.min} 人` : '', p.max ? `最多 ${p.max} 人` : ''].filter(Boolean).join('、');
+    // 各區報名出席的班：這一區（併區的話兩區同一行）填出席、陪班、備註
+    const attendHtml = (a) => {
+      const lock = a.closed && isRegion ? ' readonly' : '';
+      const ta = (key, label, list) => `<label class="form-row"><span><strong>${label}</strong>：<b data-count="${key}">${list.length}</b> 人</span>
+        <textarea class="input textarea" name="${key}" rows="2"${lock} placeholder="名字之間空一格或用、隔開">${Fmt.esc(list.join('、'))}</textarea></label>`;
+      return `
+      <article class="roster-card attend-card${a.id === focusId ? ' is-focus' : ''}" id="roster-${Fmt.esc(a.id)}">
+        <h3>${Fmt.esc(a.name)}<span class="attend-tag">出席名單・${Fmt.esc(a.row)}</span></h3>
+        <p class="card-meta">${Fmt.esc([a.start === a.end ? Fmt.shortDate(a.start) : `${Fmt.shortDate(a.start)} – ${Fmt.shortDate(a.end)}`, Fmt.timeRange(a), a.location].filter(Boolean).join('・'))}</p>
+        ${a.deadline ? `<p class="deadline${a.closed ? ' is-closed' : ''}">${a.closed ? `已經過了截止日期（${md(a.deadline)}）${isRegion ? '，要改名單請找分壇' : '，組長不能再改，總管理者還可以改'}` : `名單 ${Fmt.esc(Fmt.shortDate(a.deadline))} 截止`}</p>` : ''}
+        <form class="attend-fill" data-id="${Fmt.esc(a.id)}" data-row="${Fmt.esc(a.row)}">
+          ${ta('names', '出席', a.data.names || [])}
+          ${ta('escort', '陪班', a.data.escort || [])}
+          <label class="form-row"><span>備註（不算人數，例：載道親：王小明、交通接駁）</span><input class="input" name="note" maxlength="100" value="${Fmt.esc(a.data.note || '')}"${lock}></label>
+          <div class="roster-fill-actions"><button type="submit" class="btn btn-primary btn-small"${lock ? ' disabled' : ''}>儲存</button><span class="muted" data-msg></span></div>
+        </form>
+      </article>`;
+    };
     const evHtml = (ev) => `
       <article class="roster-card${ev.id === focusId ? ' is-focus' : ''}" id="roster-${Fmt.esc(ev.id)}">
         <h3>${Fmt.esc(ev.name)}</h3>
@@ -234,7 +254,8 @@
     view.innerHTML = head + (notice ? `<div class="notice notice-error"><p>${Fmt.esc(notice)}</p></div>` : '') + `
       ${isRegion ? '' : `<label class="form-row"><span>看哪一區</span><select class="input" data-f="unit">${regions.map((u) => `<option${u === unit ? ' selected' : ''}>${Fmt.esc(u)}</option>`).join('')}</select></label>`}
       <p class="hint">這裡是分壇派給${Fmt.esc(unit)}的勤務（7 天前到之後 4 個月）。每一欄填會去的人的名字，按「儲存」，大家打開分壇行事曆的活動就看得到。</p>
-      ${data.events.length ? data.events.map(evHtml).join('') : '<p class="panel-empty">目前沒有分壇派給這一區的勤務</p>'}`;
+      ${(data.attend || []).map(attendHtml).join('')}
+      ${data.events.length ? data.events.map(evHtml).join('') : (data.attend || []).length ? '' : '<p class="panel-empty">目前沒有分壇派給這一區的勤務</p>'}`;
     bindCommon();
     // 從活動頁來的：捲到那一筆勤務，游標放在第一欄
     const focusCard = focusId && view.querySelector('.roster-card.is-focus');
@@ -260,6 +281,28 @@
     view.querySelectorAll('.roster-fill').forEach((f) => {
       preview(f);
       f.names.addEventListener('input', () => { preview(f); f.querySelector('[data-msg]').textContent = '還沒儲存'; });
+    });
+    view.querySelectorAll('.attend-fill').forEach((f) => {
+      const count = () => ['names', 'escort'].forEach((k) => { f.querySelector(`[data-count="${k}"]`).textContent = Fmt.splitNames(f[k].value).length; });
+      f.addEventListener('input', () => { count(); f.querySelector('[data-msg]').textContent = '還沒儲存'; });
+      f.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const msg = f.querySelector('[data-msg]');
+        msg.textContent = '儲存中⋯';
+        try {
+          const res = await Api.admin('adminAttendSave', { id: f.dataset.id, row: f.dataset.row, names: f.names.value, escort: f.escort.value, note: f.note.value });
+          const d = (res.event.attend || {})[f.dataset.row] || { names: [], escort: [], note: '' };
+          f.names.value = d.names.join('、');
+          f.escort.value = d.escort.join('、');
+          f.note.value = d.note;
+          count();
+          msg.textContent = '已儲存';
+          CalendarPage.refresh(true);
+        } catch (x) {
+          if (x.code === 'UNAUTHORIZED' && /登入/.test(x.message)) return renderLogin(x.message);
+          msg.textContent = x.message;
+        }
+      });
     });
     view.querySelectorAll('.roster-fill').forEach((f) => f.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -534,6 +577,7 @@
             <label><span>截止日期（可以不填）</span><input class="input" type="date" name="deadline" value="${Fmt.esc(ev.deadline || '')}"></label>
             <label><span>服裝（可以不填）</span><input class="input" name="dress" maxlength="60" value="${Fmt.esc(ev.dress || '')}" placeholder="例：白上衣、深色長褲"></label>
           </div>
+          <label class="check-row signup-row"><input type="checkbox" name="signup"${ev.signup ? ' checked' : ''}> 各區報名出席（各區組長填這個班的出席、陪班名單，活動頁可以出「出席名單表」）</label>
           <p class="hint">截止日期是各區組長填名單的最後一天，過了那天組長就不能改（總管理者還可以改）。分壇活動填了，掛在下面的各區勤務沒填的也照這一天。</p>
           <label class="form-row"><span>說明（可以不填）</span><textarea class="input textarea" name="note" rows="4" maxlength="1000">${Fmt.esc(ev.note || '')}</textarea></label>
           <label class="form-row"><span>相關連結（可以不填，要 https:// 開頭）</span><input class="input" type="url" name="link" maxlength="500" value="${Fmt.esc(ev.link || '')}" placeholder="https://"></label>
@@ -559,6 +603,7 @@
       form.querySelector('.kind-note').hidden = !region;
       form.querySelector('.pos-block').hidden = !region || ev.kind === '區活動';
       form.querySelector('.duty-block').hidden = region;
+      form.querySelector('.signup-row').hidden = region;
     };
     const rowData = (el) => {
       const picks = [...el.querySelectorAll('[data-pick]:checked')].map((c) => c.dataset.pick);
@@ -575,8 +620,10 @@
     };
     const drawSum = (el) => {
       const d = rowData(el);
+      // 一個一個寫選了什麼：組放前面、哪幾區放後面（例：志工團第 6 組（教勇區）、教真區）
+      const pickLabel = (p) => { if (p.indexOf('u:') === 0) return Fmt.esc(p.slice(2)); const fg = findGroup(p); if (!fg) return ''; const { t, g } = fg; return Fmt.esc((t.label !== undefined ? t.label : t.name) + t.pre + g[0] + t.post) + `<small>（${Fmt.esc(g[1].join('、'))}）</small>`; };
       el.querySelector('.duty-sum').innerHTML = d.units.length
-        ? '派給：' + d.units.map((u) => Fmt.esc(u) + (d.label(u) ? `<small>（${Fmt.esc(d.label(u))}）</small>` : '')).join('、')
+        ? '派給：' + d.picks.map(pickLabel).filter(Boolean).join('、')
         : '<span class="muted">還沒選派給誰</span>';
     };
     form.querySelectorAll('.duty-row').forEach(drawSum);
@@ -659,6 +706,7 @@
       }
       // 分壇活動：分工（每一項、每一區一筆）
       let lost = [];
+      if (data.unit === fentan) data.signup = !!form.signup.checked;
       if (data.unit === fentan) {
         data.duties = [];
         data.assign = [];
