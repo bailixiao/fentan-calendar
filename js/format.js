@@ -117,5 +117,44 @@
     return out;
   }
 
-  window.Fmt = { splitNames, statusBadge, rosterHtml, esc, toDateStr, parseDate, addDays, datesBetween, rocYear, weekday, shortDate, rocDate, catLabel, timeRange, cardTime, tagsHtml };
+  /**
+   * 分工選的（picks）：'u:區名'＝派給的區；'t:團名:組'＝按了哪一組（只用來寫組別）。
+   * 舊資料只有組沒有區：補上那一組的區。
+   */
+  function normPicks(picks) {
+    const out = (picks || []).slice();
+    const teams = window.SITE.teams || [];
+    out.forEach((p) => {
+      if (p.indexOf('t:') !== 0) return;
+      const [, tn, gk] = p.split(':');
+      const t = teams.find((x) => x.name === tn);
+      const g = t && t.groups.find((x) => x[0] === gk);
+      if (g && !g[1].some((u) => out.indexOf('u:' + u) !== -1)) g[1].forEach((u) => out.push('u:' + u));
+    });
+    return out;
+  }
+
+  /** 分工寫成一句：組放前面、那一組這次派的區放括號；沒在組裡的區接在後面。short：區名寫一個字（出席名單表用） */
+  function dutyText(picks, short) {
+    const teams = window.SITE.teams || [];
+    const units = (picks || []).filter((p) => p.indexOf('u:') === 0).map((p) => p.slice(2));
+    const name = (u) => (short ? u.replace(/^教|區$/g, '') : u);
+    const used = new Set();
+    const parts = [];
+    (picks || []).filter((p) => p.indexOf('t:') === 0).forEach((p) => {
+      const [, tn, gk] = p.split(':');
+      const t = teams.find((x) => x.name === tn);
+      const g = t && t.groups.find((x) => x[0] === gk);
+      if (!g) return;
+      const mine = g[1].filter((u) => units.indexOf(u) !== -1);
+      if (!mine.length) return;
+      mine.forEach((u) => used.add(u));
+      if (t.post === '（併區）' && mine.length === g[1].length) parts.push(g[0] + '（併區）');
+      else parts.push(`${t.label !== undefined ? t.label : t.name}${t.pre}${g[0]}${t.post.replace(/（併區）$/, '')}（${mine.map(name).join('、')}）`);
+    });
+    units.filter((u) => !used.has(u)).forEach((u) => parts.push(u));
+    return parts.join('、');
+  }
+
+  window.Fmt = { normPicks, dutyText, splitNames, statusBadge, rosterHtml, esc, toDateStr, parseDate, addDays, datesBetween, rocYear, weekday, shortDate, rocDate, catLabel, timeRange, cardTime, tagsHtml };
 })();

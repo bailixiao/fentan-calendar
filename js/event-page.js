@@ -59,22 +59,12 @@
       const text = [d.names.join('、'), d.escort.length ? '陪班：' + d.escort.join('、') : '', d.note].filter(Boolean).join('，');
       return { label, units, text, n: d.names.length + d.escort.length };
     });
-    const teams = window.SITE.teams || [];
-    const short = (units) => units.map((u) => u.replace(/^教|區$/g, '')).join('、');
-    const pickText = (p) => {
-      if (p.indexOf('u:') === 0) return p.slice(2);
-      const [, tn, gk] = p.split(':');
-      const t = teams.find((x) => x.name === tn);
-      const g = t && t.groups.find((x) => x[0] === gk);
-      if (!g) return '';
-      return t.post === '（併區）' ? g[0] : `${t.name}${t.pre}${g[0]}${t.post}（${short(g[1])}）`;
-    };
     const duties = ev.duties || [];
-    const works = ['視聽', '交通', '勤務', '導覽', '烹飪']; // 照長青班出席名單的順序
+    const works = (window.SITE.works || []).slice(); // 照長青班出席名單的順序
     duties.forEach((d) => { if (works.indexOf(d.work) === -1) works.push(d.work); });
     const duty = works.map((w) => {
       const mine = duties.filter((d) => d.work === w);
-      const text = mine.map((d) => d.picks.map(pickText).filter(Boolean).join('、')).join('；');
+      const text = mine.map((d) => [Fmt.dutyText(Fmt.normPicks(d.picks), true), d.text || ''].filter(Boolean).join('，')).join('；');
       const ids = mine.map((d) => d.id);
       const n = (ev.links || []).filter((l) => ids.indexOf(l.dutyId) !== -1).reduce((s, l) => s + ((l.counts || {})[date] || 0), 0);
       return { label: w, text, n };

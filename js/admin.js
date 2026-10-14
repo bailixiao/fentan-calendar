@@ -494,50 +494,60 @@
         <label><span>最多</span><input class="input" name="pmax" inputmode="numeric" value="${p.max === null || p.max === undefined ? '' : p.max}" placeholder="不限"></label>
         <button type="button" class="btn btn-small btn-quiet-danger" data-rm aria-label="拿掉這個項目">✕</button>
       </div>`;
-    // ---------- 分工（分壇活動用；規格第 9-5 節） ----------
+    // ---------- 分工（分壇活動用；規格第 9-5 節）：跟出席名單表一樣，固定幾行，按「安排」選 ----------
     const teams = window.SITE.teams || [];
     const isFentanEv = !ev.unit || ev.unit === fentan;
     const findGroup = (pick) => { const [, tn, gk] = pick.split(':'); const t = teams.find((x) => x.name === tn); const g = t && t.groups.find((x) => x[0] === gk); return t && g ? { t, g } : null; };
-    const pickUnits = (pick) => (pick.indexOf('u:') === 0 ? [pick.slice(2)] : ((findGroup(pick) || {}).g || [0, []])[1]);
-    // 原本的分工：新的寫法（duties），加上以前用名稱掛上的各區勤務（照工作名稱合成一項）
+    // 原本的分工（duties），加上以前用名稱掛上的各區勤務（照工作名稱合成一行）
     const myChildren = src && mode !== 'new' && events ? events.filter((e) => e.parentId === src.id) : [];
     const legacy = src && mode !== 'new' && events && isFentanEv ? legacyChildren(src) : [];
-    let dutyRows = isFentanEv ? (ev.duties || []).map((d) => ({ id: d.id, work: d.work, min: d.min, posId: d.posId, picks: d.picks.slice(),
+    const dutySaved = isFentanEv ? (ev.duties || []).map((d) => ({ id: d.id, work: d.work, min: d.min, posId: d.posId, text: d.text || '', picks: Fmt.normPicks(d.picks),
       ids: Object.fromEntries(myChildren.filter((c) => c.dutyId === d.id).map((c) => [c.unit, c.id])), oldGroup: {} })) : [];
     const byWork = {};
     legacy.forEach((c) => {
       const work = (c.name.split(/[：:]/)[0] || c.name).slice(0, 20);
-      const row = byWork[work] || (byWork[work] = { id: newDutyId(), work, min: ((c.positions || [])[0] || {}).min || null, posId: '', picks: [], ids: {}, oldGroup: {}, legacy: true });
+      const row = byWork[work] || (byWork[work] = { id: newDutyId(), work, min: ((c.positions || [])[0] || {}).min || null, posId: '', text: '', picks: [], ids: {}, oldGroup: {} });
       if (row.picks.indexOf('u:' + c.unit) === -1) row.picks.push('u:' + c.unit);
       row.ids[c.unit] = c.id;
       row.oldGroup[c.unit] = c.group || '';
     });
-    dutyRows = dutyRows.concat(Object.values(byWork));
-    if (mode === 'copy') dutyRows.forEach((r) => { r.ids = {}; r.posId = ''; r.legacy = false; });
+    const dutyAll = dutySaved.concat(Object.values(byWork));
+    // 固定的幾行：有排過就用排過的，沒有就空白；其他工作接在後面
+    let dutyRows = (window.SITE.works || []).map((w) => {
+      const i = dutyAll.findIndex((r) => r.work === w);
+      return i === -1 ? { id: newDutyId(), work: w, min: null, posId: '', text: '', picks: [], ids: {}, oldGroup: {}, fixed: true } : Object.assign(dutyAll.splice(i, 1)[0], { fixed: true });
+    }).concat(dutyAll);
+    if (mode === 'copy') dutyRows.forEach((r) => { r.ids = {}; r.posId = ''; });
     const pickChip = (r, val, label, sub) => `<label class="check-chip"><input type="checkbox" data-pick="${Fmt.esc(val)}"${r.picks.indexOf(val) !== -1 ? ' checked' : ''}> <span class="team-no">${Fmt.esc(label)}</span>${sub ? `<small>（${Fmt.esc(sub)}）</small>` : ''}</label>`;
     const dutyRow = (r) => `
-      <div class="duty-row" data-id="${Fmt.esc(r.id)}" data-pos="${Fmt.esc(r.posId || '')}">
-        <div class="duty-head">
-          <label class="duty-work"><span>工作</span><input class="input" data-f="work" maxlength="20" value="${Fmt.esc(r.work || '')}" placeholder="例：烹飪"></label>
-          <label class="duty-min"><span>每區需要幾人</span><input class="input" data-f="min" inputmode="numeric" value="${r.min === null || r.min === undefined ? '' : r.min}" placeholder="可以不填"></label>
-          <button type="button" class="btn btn-small btn-quiet-danger" data-act="rm-duty">✕ 拿掉這項</button>
+      <div class="duty-row" data-id="${Fmt.esc(r.id)}" data-pos="${Fmt.esc(r.posId || '')}"${r.fixed ? ' data-fixed="1"' : ''}>
+        <div class="duty-line">
+          ${r.fixed ? `<span class="duty-name">${Fmt.esc(r.work)}</span><input type="hidden" data-f="work" value="${Fmt.esc(r.work)}">`
+            : `<input class="input duty-name-input" data-f="work" maxlength="20" value="${Fmt.esc(r.work || '')}" placeholder="工作名稱" aria-label="工作名稱">`}
+          <div class="duty-sum"></div>
+          <button type="button" class="btn btn-small" data-act="open-duty" aria-expanded="false">安排</button>
         </div>
-        <div class="work-presets">${(window.SITE.works || []).map((w) => `<button type="button" class="btn btn-small" data-work="${Fmt.esc(w)}">${Fmt.esc(w)}</button>`).join('')}</div>
-        <p class="duty-sum"></p>
-        <details class="duty-picks"${r.picks.length ? '' : ' open'}>
-          <summary>選派給誰（區、組可以混著選）</summary>
-          <p class="team-title">區</p>
+        <div class="duty-edit" hidden>
+          <p class="team-title">區<span class="muted">（按下面的組會自動選好那幾區，也可以自己加選、取消）</span></p>
           <div class="push-units">${regions.map((u) => pickChip(r, 'u:' + u, u)).join('')}</div>
           ${teams.map((t) => `<p class="team-title">${Fmt.esc(t.name)}</p>
           <div class="push-units team-units">${t.groups.map((g) => pickChip(r, 't:' + t.name + ':' + g[0], t.pre + g[0] + t.post.replace(/（併區）$/, ''), g[1].join('、') + (g[2] ? '・' + g[2] : ''))).join('')}</div>`).join('')}
-        </details>
+          <div class="form-row-pair duty-more">
+            <label><span>每區需要幾人（可以不填）</span><input class="input" data-f="min" inputmode="numeric" value="${r.min === null || r.min === undefined ? '' : r.min}"></label>
+            <label><span>備註（可以不填，例：本次無上課）</span><input class="input" data-f="text" maxlength="40" value="${Fmt.esc(r.text || '')}"></label>
+          </div>
+          <div class="duty-edit-actions">
+            <button type="button" class="btn btn-small btn-primary" data-act="close-duty">好了</button>
+            <button type="button" class="btn btn-small btn-quiet-danger" data-act="${r.fixed ? 'clear-duty' : 'rm-duty'}">${r.fixed ? '清空這行' : '✕ 拿掉這行'}</button>
+          </div>
+        </div>
       </div>`;
     const dutyBlock = `
         <fieldset class="form-block duty-block">
-          <legend>分工（派給誰幫忙）</legend>
-          <p class="hint">一項一行：選工作，再選派給哪幾區、哪幾組（可以混著選，例如志工團第 12 組＋教真區）。存檔後每一區自動建一筆勤務，名稱是「工作：活動名稱」，掛在這個活動下面，各區組長填名單。改了這個活動的日期、地點，各區的勤務會跟著改。</p>
+          <legend>分工</legend>
+          <p class="hint">跟出席名單表下面那幾行一樣。按「安排」選派給哪幾區、哪幾組；存檔後每一區自動建一筆勤務（「工作：活動名稱」），掛在這個活動下面，各區組長填名單。沒排的行不會建。改了這個活動的日期、地點，各區的勤務會跟著改。</p>
           <div class="duty-list">${dutyRows.map(dutyRow).join('')}</div>
-          <button type="button" class="btn" data-act="add-duty">＋ 加一項分工</button>
+          <button type="button" class="btn" data-act="add-duty">＋ 加一行分工</button>
         </fieldset>`;
     const unitBlock = multi ? `
       <label class="radio-row"><input type="radio" name="scope" value="fentan"${isRegion ? '' : ' checked'}> 分壇自己的活動</label>
@@ -577,7 +587,7 @@
             <label><span>截止日期（可以不填）</span><input class="input" type="date" name="deadline" value="${Fmt.esc(ev.deadline || '')}"></label>
             <label><span>服裝（可以不填）</span><input class="input" name="dress" maxlength="60" value="${Fmt.esc(ev.dress || '')}" placeholder="例：白上衣、深色長褲"></label>
           </div>
-          <label class="check-row signup-row"><input type="checkbox" name="signup"${ev.signup ? ' checked' : ''}> 各區報名出席（各區組長填這個班的出席、陪班名單，活動頁可以出「出席名單表」）</label>
+          <label class="check-row signup-row"><input type="checkbox" name="signup"${ev.signup ? ' checked' : ''}> <span>各區報名出席<small class="muted">（各區組長填出席、陪班，活動頁出「出席名單表」）</small></span></label>
           <p class="hint">截止日期是各區組長填名單的最後一天，過了那天組長就不能改（總管理者還可以改）。分壇活動填了，掛在下面的各區勤務沒填的也照這一天。</p>
           <label class="form-row"><span>說明（可以不填）</span><textarea class="input textarea" name="note" rows="4" maxlength="1000">${Fmt.esc(ev.note || '')}</textarea></label>
           <label class="form-row"><span>相關連結（可以不填，要 https:// 開頭）</span><input class="input" type="url" name="link" maxlength="500" value="${Fmt.esc(ev.link || '')}" placeholder="https://"></label>
@@ -605,42 +615,66 @@
       form.querySelector('.duty-block').hidden = region;
       form.querySelector('.signup-row').hidden = region;
     };
+    // 一行分工：派給的區（u:）、按了的組（t:，寫組別用）
     const rowData = (el) => {
       const picks = [...el.querySelectorAll('[data-pick]:checked')].map((c) => c.dataset.pick);
-      const per = {}; // 區 → { 團名: [組] }
-      const order = [];
-      picks.forEach((p) => pickUnits(p).forEach((u) => {
-        if (!per[u]) { per[u] = {}; order.push(u); }
-        if (p.indexOf('t:') === 0) { const { t, g } = findGroup(p); (per[u][t.name] ||= []).push(g[0]); }
-      }));
-      const label = (u) => Object.keys(per[u]).map((tn) => { const t = teams.find((x) => x.name === tn); return (t.label !== undefined ? t.label : t.name) + t.pre + per[u][tn].join('、') + t.post; }).join('、');
-      const units = editableUnits();
-      order.sort((a, b) => units.indexOf(a) - units.indexOf(b));
-      return { picks, units: order, label };
+      const order = editableUnits();
+      const units = picks.filter((p) => p.indexOf('u:') === 0).map((p) => p.slice(2)).sort((a, b) => order.indexOf(a) - order.indexOf(b));
+      const label = (u) => {
+        const per = {};
+        picks.filter((p) => p.indexOf('t:') === 0).forEach((p) => { const fg = findGroup(p); if (fg && fg.g[1].indexOf(u) !== -1) (per[fg.t.name] ||= []).push(fg.g[0]); });
+        return Object.keys(per).map((tn) => { const t = teams.find((x) => x.name === tn); return (t.label !== undefined ? t.label : t.name) + t.pre + per[tn].join('、') + t.post; }).join('、');
+      };
+      return { picks, units, label };
     };
     const drawSum = (el) => {
       const d = rowData(el);
-      // 一個一個寫選了什麼：組放前面、哪幾區放後面（例：志工團第 6 組（教勇區）、教真區）
-      const pickLabel = (p) => { if (p.indexOf('u:') === 0) return Fmt.esc(p.slice(2)); const fg = findGroup(p); if (!fg) return ''; const { t, g } = fg; return Fmt.esc((t.label !== undefined ? t.label : t.name) + t.pre + g[0] + t.post) + `<small>（${Fmt.esc(g[1].join('、'))}）</small>`; };
-      el.querySelector('.duty-sum').innerHTML = d.units.length
-        ? '派給：' + d.picks.map(pickLabel).filter(Boolean).join('、')
-        : '<span class="muted">還沒選派給誰</span>';
+      const min = el.querySelector('[data-f="min"]').value.trim();
+      const text = el.querySelector('[data-f="text"]').value.trim();
+      const parts = [Fmt.esc(Fmt.dutyText(d.picks)) + (d.units.length && min ? `<small>（每區 ${Fmt.esc(min)} 人）</small>` : ''), Fmt.esc(text)].filter(Boolean);
+      el.querySelector('.duty-sum').innerHTML = d.units.length || text ? parts.join('，') : '<span class="muted">—</span>';
     };
     form.querySelectorAll('.duty-row').forEach(drawSum);
-    form.addEventListener('change', (e) => { const r = e.target.closest('.duty-row'); if (r) drawSum(r); });
+    // 按組＝選那幾區；取消組＝取消那幾區（同一行別的組還要的區留著）
+    form.addEventListener('change', (e) => {
+      const r = e.target.closest('.duty-row');
+      if (!r) return;
+      const c = e.target.closest('[data-pick^="t:"]');
+      if (c) {
+        const fg = findGroup(c.dataset.pick);
+        const still = new Set([...r.querySelectorAll('[data-pick^="t:"]:checked')].flatMap((x) => (findGroup(x.dataset.pick) || { g: [0, []] }).g[1]));
+        if (fg) fg.g[1].forEach((u) => { const box = r.querySelector(`[data-pick="u:${u}"]`); if (box) box.checked = c.checked || still.has(u); });
+      }
+      drawSum(r);
+    });
+    form.addEventListener('input', (e) => { const r = e.target.closest('.duty-row'); if (r) drawSum(r); });
+    const openRow = (row, open) => {
+      row.querySelector('.duty-edit').hidden = !open;
+      row.classList.toggle('is-open', open);
+      row.querySelector('[data-act="open-duty"]').setAttribute('aria-expanded', String(open));
+    };
     form.addEventListener('click', (e) => {
       const b = e.target.closest('button');
       if (!b) return;
+      const row = b.closest('.duty-row');
       if (b.dataset.act === 'add-duty') {
         const list = form.querySelector('.duty-list');
         if (list.children.length >= 20) return;
-        list.insertAdjacentHTML('beforeend', dutyRow({ id: newDutyId(), work: '', min: null, posId: '', picks: [], ids: {}, oldGroup: {} }));
-        const row = list.lastElementChild;
-        drawSum(row);
-        row.querySelector('[data-f="work"]').focus();
+        list.insertAdjacentHTML('beforeend', dutyRow({ id: newDutyId(), work: '', min: null, posId: '', text: '', picks: [], ids: {}, oldGroup: {} }));
+        const added = list.lastElementChild;
+        drawSum(added);
+        openRow(added, true);
+        added.querySelector('[data-f="work"]').focus();
       }
-      if (b.dataset.act === 'rm-duty') b.closest('.duty-row').remove();
-      if (b.dataset.work) { const row = b.closest('.duty-row'); row.querySelector('[data-f="work"]').value = b.dataset.work; }
+      if (b.dataset.act === 'open-duty') openRow(row, row.querySelector('.duty-edit').hidden);
+      if (b.dataset.act === 'close-duty') { openRow(row, false); row.scrollIntoView({ block: 'nearest' }); }
+      if (b.dataset.act === 'rm-duty') row.remove();
+      if (b.dataset.act === 'clear-duty') {
+        row.querySelectorAll('[data-pick]').forEach((c) => { c.checked = false; });
+        row.querySelector('[data-f="min"]').value = '';
+        row.querySelector('[data-f="text"]').value = '';
+        drawSum(row);
+      }
     });
     sync();
     form.addEventListener('change', sync);
@@ -714,10 +748,11 @@
         form.querySelectorAll('.duty-row').forEach((el, i) => {
           const old = dutyRows.find((r) => r.id === el.dataset.id) || { ids: {}, oldGroup: {} };
           const work = el.querySelector('[data-f="work"]').value.trim();
+          const text = el.querySelector('[data-f="text"]').value.trim();
           const d = rowData(el);
-          if (!work) errs.push(`第 ${i + 1} 項分工沒有填工作`);
-          if (!d.units.length) errs.push(`分工「${work || i + 1}」還沒選派給誰`);
-          data.duties.push({ id: el.dataset.id, work, picks: d.picks, min: el.querySelector('[data-f="min"]').value.trim(), posId: el.dataset.pos || undefined });
+          if (!d.units.length && !text) return; // 沒排的行：略過
+          if (!work) { errs.push(`第 ${i + 1} 行分工沒有填工作名稱`); return; }
+          data.duties.push({ id: el.dataset.id, work, picks: d.picks, min: el.querySelector('[data-f="min"]').value.trim(), text, posId: el.dataset.pos || undefined });
           d.units.forEach((u) => {
             const id = old.ids[u];
             if (id) sent.add(id);

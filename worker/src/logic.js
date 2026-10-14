@@ -74,7 +74,7 @@ function cleanPositions(list, newId, errs) {
   return out;
 }
 
-/** 分壇活動的分工：[{ id, work, picks, min, posId }]；picks＝'u:區名' 或 't:團名:組'（前端畫面用，伺服器只存） */
+/** 分壇活動的分工：[{ id, work, picks, min, posId, text }]（text＝備註，例：本次無上課）；picks＝'u:區名' 或 't:團名:組'（前端畫面用，伺服器只存） */
 function cleanDuties(list, makeId, errs) {
   if (!Array.isArray(list)) return [];
   if (list.length > 20) errs.push('分工最多 20 項');
@@ -86,7 +86,9 @@ function cleanDuties(list, makeId, errs) {
     const min = intOrNull(d && d.min, `「${work}」的需要人數`, errs);
     const id = typeof d.id === 'string' && /^D-[\w-]{1,40}$/.test(d.id) ? d.id : makeId().replace(/^P-/, 'D-');
     const posId = typeof d.posId === 'string' && /^P-[\w-]{1,40}$/.test(d.posId) ? d.posId : makeId();
-    return { id, work, picks, min, posId };
+    const text = str(d && d.text).replace(/\s+/g, ' ');
+    if (text.length > 40) errs.push(`分工「${work}」的備註最多 40 字`);
+    return { id, work, picks, min, posId, text };
   });
 }
 
