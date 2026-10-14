@@ -117,44 +117,41 @@
     return out;
   }
 
+  /** 分工選的（picks）：'u:區名'＝派給一區；'t:團名:組'＝派給一組（或併區），整組一份名單 */
+  function findPick(p) {
+    const [, tn, gk] = String(p).split(':');
+    const t = (window.SITE.teams || []).find((x) => x.name === tn);
+    const g = t && t.groups.find((x) => x[0] === gk);
+    return t && g ? { t, g } : null;
+  }
+
   /**
-   * 分工選的（picks）：'u:區名'＝派給的區；'t:團名:組'＝按了哪一組（只用來寫組別）。
-   * 舊資料只有組沒有區：補上那一組的區。
+   * 舊資料（2026-10-14 以前）按組會順便選那幾區：組在、組裡的區也都在的，那幾區是順便選的，拿掉。
+   * 組在、只剩部分的區：當時是把別的區取消，照「整組」算。
    */
   function normPicks(picks) {
-    const out = (picks || []).slice();
-    const teams = window.SITE.teams || [];
-    out.forEach((p) => {
-      if (p.indexOf('t:') !== 0) return;
-      const [, tn, gk] = p.split(':');
-      const t = teams.find((x) => x.name === tn);
-      const g = t && t.groups.find((x) => x[0] === gk);
-      if (g && !g[1].some((u) => out.indexOf('u:' + u) !== -1)) g[1].forEach((u) => out.push('u:' + u));
-    });
-    return out;
+    const list = (picks || []).slice();
+    const drop = new Set();
+    list.filter((p) => p.indexOf('t:') === 0).forEach((p) => { const fg = findPick(p); if (fg) fg.g[1].forEach((u) => drop.add('u:' + u)); });
+    return list.filter((p) => !drop.has(p));
   }
 
-  /** 分工寫成一句：組放前面、那一組這次派的區放括號；沒在組裡的區接在後面。short：區名寫一個字（出席名單表用） */
-  function dutyText(picks, short) {
-    const teams = window.SITE.teams || [];
-    const units = (picks || []).filter((p) => p.indexOf('u:') === 0).map((p) => p.slice(2));
+  /** 一組（或一區）寫成一段：組名＋（組裡的區）；併區寫「教慈/理（併區）」。short：區名寫一個字（出席名單表用） */
+  function pickText(p, short) {
     const name = (u) => (short ? u.replace(/^教|區$/g, '') : u);
-    const used = new Set();
-    const parts = [];
-    (picks || []).filter((p) => p.indexOf('t:') === 0).forEach((p) => {
-      const [, tn, gk] = p.split(':');
-      const t = teams.find((x) => x.name === tn);
-      const g = t && t.groups.find((x) => x[0] === gk);
-      if (!g) return;
-      const mine = g[1].filter((u) => units.indexOf(u) !== -1);
-      if (!mine.length) return;
-      mine.forEach((u) => used.add(u));
-      if (t.post === '（併區）' && mine.length === g[1].length) parts.push(g[0] + '（併區）');
-      else parts.push(`${t.label !== undefined ? t.label : t.name}${t.pre}${g[0]}${t.post.replace(/（併區）$/, '')}（${mine.map(name).join('、')}）`);
-    });
-    units.filter((u) => !used.has(u)).forEach((u) => parts.push(u));
-    return parts.join('、');
+    if (p.indexOf('u:') === 0) return p.slice(2);
+    const fg = findPick(p);
+    if (!fg) return '';
+    const { t, g } = fg;
+    if (t.post === '（併區）') return g[0] + '（併區）';
+    return `${t.label !== undefined ? t.label : t.name}${t.pre}${g[0]}${t.post}（${g[1].map(name).join('、')}${g[2] ? '・' + g[2] : ''}）`;
   }
 
-  window.Fmt = { normPicks, dutyText, splitNames, statusBadge, rosterHtml, esc, toDateStr, parseDate, addDays, datesBetween, rocYear, weekday, shortDate, rocDate, catLabel, timeRange, cardTime, tagsHtml };
+  /** 分工寫成一句：組放前面、區放後面 */
+  function dutyText(picks, short) {
+    const list = picks || [];
+    return list.filter((p) => p.indexOf('t:') === 0).concat(list.filter((p) => p.indexOf('u:') === 0)).map((p) => pickText(p, short)).filter(Boolean).join('、');
+  }
+
+  window.Fmt = { findPick, normPicks, pickText, dutyText, splitNames, statusBadge, rosterHtml, esc, toDateStr, parseDate, addDays, datesBetween, rocYear, weekday, shortDate, rocDate, catLabel, timeRange, cardTime, tagsHtml };
 })();

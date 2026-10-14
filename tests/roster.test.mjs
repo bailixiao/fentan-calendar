@@ -167,6 +167,27 @@ test('分壇活動裡排分工：自動建各區勤務、改日期跟著改、�
   assert.equal(list.length, 0);
 });
 
+test('派給一組：整組一筆，組裡兩區的組長都能填同一份；別區不行', async () => {
+  const env = setup();
+  const sup = env.ok(await env.post({ action: 'adminLogin', password: 'test-pass' })).token;
+  const res = env.ok(await env.post({ action: 'adminSave', token: sup, event: E({ unit: '分壇', category: '教育', name: '長青班',
+    duties: [{ id: 'D-c', work: '烹飪', picks: ['t:烹飪團:八'] }],
+    assign: [{ unit: '教慈區', units: ['教慈區', '教理區'], key: 't:烹飪團:八', dutyId: 'D-c', group: '烹飪團第八組（慈、理）' }] }) }));
+  assert.equal(res.children.length, 1);
+  const c = res.children[0];
+  assert.deepEqual([c.unit, c.units, c.pickKey], ['教慈區', ['教慈區', '教理區'], 't:烹飪團:八']);
+  for (const u of ['教慈區', '教理區', '教真區']) env.ok(await env.post({ action: 'adminSetAccount', token: sup, unit: u, password: 'pass-' + u }));
+  const li = env.ok(await env.post({ action: 'adminLogin', account: '教理區', password: 'pass-教理區' })).token;
+  const zh = env.ok(await env.post({ action: 'adminLogin', account: '教真區', password: 'pass-教真區' })).token;
+  assert.deepEqual(env.ok(await env.post({ action: 'adminRosterList', token: li })).events.map((e) => e.id), [c.id]);
+  env.ok(await env.post({ action: 'adminRosterSave', token: li, id: c.id, date: '2026-10-24', key: c.positions[0].id, names: '測試甲' }));
+  const r = await env.post({ action: 'adminRosterSave', token: zh, id: c.id, date: '2026-10-24', key: c.positions[0].id, names: '測試乙' });
+  assert.match(r.error.message, /只能填自己區/);
+  // 舊資料一區一筆：改成整組後，沿用教慈區那筆、教理區那筆刪掉
+  const cal = env.ok(await env.get('action=getCalendar&from=2026-10-01&to=2026-10-31'));
+  assert.deepEqual(cal.events.find((e) => e.name === '長青班').links[0].units, ['教慈區', '教理區']);
+});
+
 test('以前用名稱掛上的各區勤務：帶進分工後改用 parentId，名單從「_」搬過來；drop 的刪掉', async () => {
   const env = setup();
   const sup = env.ok(await env.post({ action: 'adminLogin', password: 'test-pass' })).token;

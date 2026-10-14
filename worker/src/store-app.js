@@ -1,6 +1,6 @@
 // 在 Durable Object 裡執行的部分：手動活動的讀寫、管理者登入。所有請求依序處理，不會兩筆同時改。
 // call(body) 回傳 { ok: true, data } 或 { ok: false, error: { code, message } }。
-import { AppError, cleanEvent, cleanRosterNames, deadlinesOf, newEventId, publicEvent, taipeiDate, taipeiStamp, editableUnits } from './logic.js';
+import { AppError, buildCalendar, cleanEvent, cleanRosterNames, deadlinesOf, newEventId, publicEvent, taipeiDate, taipeiStamp, editableUnits } from './logic.js';
 import { SITE } from './site.js';
 import { createPushApp } from './push-app.js';
 
@@ -120,14 +120,34 @@ export function createStoreApp(store, opts) {
   }
 
   /** 組長看自己區的分壇分配勤務（今天前 7 天～之後 120 天）；總管理者帶 unit 看任何一區 */
+  /** 這筆勤務是不是這一區的：派給這一區，或派給的組裡有這一區 */
+  const inUnit = (e, unit) => e.unit === unit || (Array.isArray(e.units) && e.units.indexOf(unit) !== -1);
+
   function adminRosterList(body, who) {
     const unit = who || (typeof body.unit === 'string' ? body.unit : '');
-    if (accountUnits().indexOf(unit) === -1) throw new AppError('BAD_REQUEST', '單位不對');
+    // 總管理者可以選「分壇」：全部的分工、出席名單，照分壇活動排（規格第 9-4 節）
+    const all = !who && unit === SITE.fentan;
+    if (!all && accountUnits().indexOf(unit) === -1) throw new AppError('BAD_REQUEST', '單位不對');
     const from = taipeiDate(now() - 7 * 86400e3);
     const to = taipeiDate(now() + 120 * 86400e3);
-    const events = store.allEvents().filter((e) => e.unit === unit && e.kind !== '區活動' && e.end >= from && e.start <= to);
+    const events = store.allEvents().filter((e) => (all ? e.unit !== SITE.fentan : inUnit(e, unit)) && e.kind !== '區活動' && e.end >= from && e.start <= to);
     const dl = deadlinesOf(store.allEvents().map(publicEvent));
     const today = taipeiDate(now());
+    if (all) {
+      const fentan = store.allEvents().filter((e) => e.unit === SITE.fentan && e.end >= from && e.start <= to);
+      const attendAll = fentan.filter((e) => e.signup === true).flatMap((e) => SITE.attendRows.map((r) => ({
+        id: e.id, name: e.name, start: e.start, end: e.end, startTime: e.startTime || '', endTime: e.endTime || '', location: e.location || '', note: e.note || '',
+        row: r[0], data: Object.assign({ names: [], escort: [], traffic: [], note: '' }, (e.attend || {})[r[0]] || {}), deadline: e.deadline || '', closed: !!e.deadline && today > e.deadline
+      })));
+      // 掛在哪個分壇活動下：parentId，或以前用名稱掛上的
+      const owner = {};
+      buildCalendar(store.allEvents().map(publicEvent), true).forEach((it) => (it.links || []).forEach((l) => { if (it.source !== 'group') owner[l.id] = it.id; }));
+      events.forEach((e) => { e.parentId = e.parentId || owner[e.id] || ''; });
+      const parents = sortEvents(fentan.filter((e) => e.signup === true || events.some((c) => c.parentId === e.id)))
+        .map((e) => ({ id: e.id, name: e.name, start: e.start, end: e.end, startTime: e.startTime || '', endTime: e.endTime || '', location: e.location || '' }));
+      return { unit, today, parents, attend: attendAll,
+        events: sortEvents(events).map((e) => Object.assign(publicEvent(e), { deadline: dl[e.id] || e.deadline || '', closed: !!dl[e.id] && today > dl[e.id] })) };
+    }
     // 各區報名出席的班：這一區在哪一行（併區的兩區同一行）
     const row = SITE.attendRows.find((r) => r[1].indexOf(unit) !== -1);
     const attend = row ? store.allEvents().filter((e) => e.unit === SITE.fentan && e.signup === true && e.end >= from && e.start <= to).map((e) => ({
@@ -141,7 +161,7 @@ export function createStoreApp(store, opts) {
     const ev = typeof body.id === 'string' ? store.getEvent(body.id) : null;
     if (!ev) throw new AppError('NOT_FOUND', '找不到這筆勤務，可能已經被刪除');
     if (ev.unit === SITE.fentan || ev.kind === '區活動') throw new AppError('BAD_REQUEST', '這筆不是派給區的勤務');
-    if (who && ev.unit !== who) throw new AppError('UNAUTHORIZED', '只能填自己區的名單');
+    if (who && !inUnit(ev, who)) throw new AppError('UNAUTHORIZED', '只能填自己區的名單');
     const deadline = deadlinesOf(store.allEvents().map(publicEvent))[ev.id] || '';
     if (who && deadline && taipeiDate(now()) > deadline) {
       throw new AppError('BAD_REQUEST', `已經過了截止日期（${Number(deadline.slice(5, 7))}/${Number(deadline.slice(8, 10))}），要改名單請找分壇`);
@@ -250,15 +270,19 @@ export function createStoreApp(store, opts) {
     const seen = new Set();
     const saved = [];
     assign.forEach((a) => {
-      const unit = a && typeof a.unit === 'string' ? a.unit : '';
-      if (unit === SITE.fentan || units.indexOf(unit) === -1) throw new AppError('BAD_REQUEST', '分工的單位不對：' + unit.slice(0, 20));
+      // 派給誰：一區（units 只有一個）或一組／併區（units 是組裡的區，一份名單，這幾區的組長都能填）
+      const list = Array.isArray(a && a.units) && a.units.length ? [...new Set(a.units.map(String))] : [a && typeof a.unit === 'string' ? a.unit : ''];
+      if (list.length > 6 || list.some((u) => u === SITE.fentan || units.indexOf(u) === -1)) throw new AppError('BAD_REQUEST', '分工的單位不對：' + list.join('、').slice(0, 30));
+      const unit = list[0];
+      const key = typeof a.key === 'string' && a.key ? a.key.slice(0, 40) : 'u:' + unit;
       const duty = (parent.duties || []).find((d) => d.id === a.dutyId);
       if (!duty) throw new AppError('BAD_REQUEST', '分工資料不對，請重新整理再試一次');
-      if (seen.has(duty.id + '|' + unit)) return;
-      seen.add(duty.id + '|' + unit);
+      if (seen.has(duty.id + '|' + key)) return;
+      seen.add(duty.id + '|' + key);
+      const keyOf = (e) => e.pickKey || 'u:' + e.unit;
       let old = typeof a.id === 'string' ? byId.get(a.id) || null : null;
-      if (old && (old.unit !== unit || used.has(old.id) || (old.parentId && old.parentId !== parent.id))) old = null;
-      if (!old) old = mine.find((e) => e.dutyId === duty.id && e.unit === unit && !used.has(e.id)) || null;
+      if (old && (list.indexOf(old.unit) === -1 || used.has(old.id) || (old.parentId && old.parentId !== parent.id))) old = null;
+      if (!old) old = mine.find((e) => e.dutyId === duty.id && keyOf(e) === key && !used.has(e.id)) || null;
       // 了愿項目：一項（工作名稱、需要人數）；舊資料自己有別的了愿項目就照舊。名單從「_」搬到這一項
       const ours = old && (old.positions || []).length && !(old.positions.length === 1 && old.positions[0].id === duty.posId);
       const roster = old && old.roster ? JSON.parse(JSON.stringify(old.roster)) : {};
@@ -269,7 +293,7 @@ export function createStoreApp(store, opts) {
         group: typeof a.group === 'string' ? a.group.trim().slice(0, 60) : '',
         start: parent.start, end: parent.end, startTime: parent.startTime || '', endTime: parent.endTime || '', location: parent.location || '',
         positions: ours ? old.positions : [{ id: duty.posId, name: duty.work, min: duty.min, max: null }],
-        roster, parentId: parent.id, dutyId: duty.id, createdAt: old ? old.createdAt : stamp, updatedAt: stamp
+        roster, parentId: parent.id, dutyId: duty.id, pickKey: key, units: list.length > 1 ? list : [], createdAt: old ? old.createdAt : stamp, updatedAt: stamp
       });
       used.add(ev.id);
       store.putEvent(ev);

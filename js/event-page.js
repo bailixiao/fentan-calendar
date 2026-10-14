@@ -104,7 +104,7 @@
   /** 已分配給各區的名單：先收起來（一行寫派了幾區、填了幾人），要看、要填再打開 */
   function foldHtml(ev, date) {
     const links = linksOn(ev, date);
-    const units = [...new Set(links.map((l) => l.unit))];
+    const units = [...new Set(links.flatMap((l) => (l.units && l.units.length ? l.units : [l.unit])))];
     const filled = links.reduce((n, l) => n + ((l.counts || {})[date] || 0), 0);
     return `<section class="detail-section">
         <details class="linked-fold">
@@ -130,7 +130,7 @@
       return `
         <article class="linked-item">
           <div class="linked-head">
-            <span><span class="unit-tag">${Fmt.esc(l.unit)}</span> <strong>${Fmt.esc(l.name)}</strong>${l.group ? ` <small class="muted">${Fmt.esc(l.group)}</small>` : ''}</span>
+            <span><span class="unit-tag">${Fmt.esc(l.units && l.units.length > 1 || l.group ? l.group || l.units.join('、') : l.unit)}</span> <strong>${Fmt.esc(l.name)}</strong></span>
             ${total ? `<span class="badge badge-ok">已填 ${total} 人</span>` : '<span class="badge badge-full">還沒填名單</span>'}
           </div>
           ${l.dress || (l.deadline && l.deadline !== ev.deadline) ? `<p class="card-meta">${Fmt.esc([l.dress ? '服裝：' + l.dress : '', l.deadline && l.deadline !== ev.deadline ? Fmt.shortDate(l.deadline) + ' 截止' : ''].filter(Boolean).join('・'))}</p>` : ''}

@@ -45,14 +45,13 @@
     try {
       // 組長帳號：只有填名單
       if (who.role === 'region') {
-        // 併區（例：教慈/理）的兩區是同一行，兩區的組長都可以
-        const sameRow = fill && window.SITE.attendRows.some((r) => r[1].indexOf(fill.unit) !== -1 && r[1].indexOf(who.account) !== -1);
-        const other = fill && fill.unit !== who.account && !sameRow ? `你登入的是${who.account}，只能填${who.account}的名單。要填${fill.unit}的，請先登出再用${fill.unit}的帳號登入。` : '';
-        return renderRoster(who.account, fill && !other ? fill.id : '', other);
+        // 別區的連結：同一組（或併區）的就直接到那一筆；不是的才提醒（看名單裡有沒有那一筆）
+        const other = fill && fill.unit !== who.account ? `你登入的是${who.account}，只能填${who.account}的名單。要填${fill.unit}的，請先登出再用${fill.unit}的帳號登入。` : '';
+        return renderRoster(who.account, fill ? fill.id : '', '', other);
       }
       if (fill) return renderRoster(fill.unit, fill.id);
       if (parts[0] === 'accounts') return renderAccounts();
-      if (parts[0] === 'roster') return renderRoster(decodeURIComponent(parts[1] || '') || editableUnits().filter((u) => u !== window.SITE.fentan)[0]);
+      if (parts[0] === 'roster') return renderRoster(decodeURIComponent(parts[1] || '') || window.SITE.fentan);
       if (parts[0] === 'new') return renderForm(null, 'new');
       if (parts[0] === 'edit' || parts[0] === 'copy') {
         if (!events) await loadEvents();
@@ -198,7 +197,7 @@
   }
 
   /** 填名單：組長看自己區的；總管理者可以選任何一區 */
-  async function renderRoster(unit, focusId, notice) {
+  async function renderRoster(unit, focusId, notice, otherNotice) {
     const who = Api.who() || { role: 'super' };
     const isRegion = who.role === 'region';
     const head = isRegion
@@ -252,11 +251,39 @@
             }).join('')}
           </div>`).join('')}
       </article>`;
+    // 總管理者選「分壇」：照分壇活動排，每個活動一張；裡面各區（各組）的名單先收起來，要填再打開
+    const isAll = !isRegion && unit === window.SITE.fentan;
+    const filled = (ev) => Object.values(ev.roster || {}).reduce((n, day) => n + Object.values(day).reduce((m, x) => m + x.length, 0), 0);
+    const fold = (summary, inner, open) => `<details class="fill-fold"${open ? ' open' : ''}><summary>${summary}</summary>${inner}</details>`;
+    const dutyFold = (ev) => fold(`<span class="unit-tag">${Fmt.esc(ev.group || (ev.units && ev.units.length > 1 ? ev.units.join('、') : ev.unit))}</span> ${Fmt.esc(ev.name.split(/[：:]/)[0])}<span class="fold-count">${filled(ev) ? `已填 ${filled(ev)} 人` : '還沒填'}</span>`, evHtml(ev), ev.id === focusId);
+    const attendFold = (a) => {
+      const n = (a.data.names || []).length + (a.data.escort || []).length + (a.data.traffic || []).length;
+      return fold(`<span class="unit-tag">${Fmt.esc(a.row)}</span> 出席名單<span class="fold-count">${n ? `${n} 人` : '還沒填'}</span>`, attendHtml(a), false);
+    };
+    const allHtml = () => {
+      const parents = data.parents || [];
+      const ids = new Set(parents.map((p) => p.id));
+      const blocks = parents.map((p) => {
+        const kids = data.events.filter((e) => e.parentId === p.id);
+        const rows = (data.attend || []).filter((a) => a.id === p.id);
+        const n = kids.reduce((m, e) => m + filled(e), 0) + rows.reduce((m, a) => m + (a.data.names || []).length + (a.data.escort || []).length + (a.data.traffic || []).length, 0);
+        return `<section class="fill-group">
+          <h2 class="fill-group-title">${Fmt.esc(p.name)}<span class="h2-sub">${Fmt.esc(p.start === p.end ? Fmt.shortDate(p.start) : `${Fmt.shortDate(p.start)} – ${Fmt.shortDate(p.end)}`)}・已填 ${n} 人</span></h2>
+          ${rows.length ? `<p class="fill-sub">出席名單</p>${rows.map(attendFold).join('')}` : ''}
+          ${kids.length ? `<p class="fill-sub">分工</p>${kids.map(dutyFold).join('')}` : ''}
+        </section>`;
+      });
+      const others = data.events.filter((e) => !e.parentId || !ids.has(e.parentId));
+      if (others.length) blocks.push(`<section class="fill-group"><h2 class="fill-group-title">其他勤務<span class="h2-sub">沒有排在分壇活動裡的</span></h2>${others.map(dutyFold).join('')}</section>`);
+      return blocks.join('') || '<p class="panel-empty">目前沒有派給各區的勤務，也沒有要報名出席的班</p>';
+    };
+    // 從別區的連結來：這一區的名單裡有那一筆（同一組、併區）就不用提醒
+    if (otherNotice && !(data.events.some((e) => e.id === focusId) || (data.attend || []).some((a) => a.id === focusId))) notice = otherNotice;
     view.innerHTML = head + (notice ? `<div class="notice notice-error"><p>${Fmt.esc(notice)}</p></div>` : '') + `
-      ${isRegion ? '' : `<label class="form-row"><span>看哪一區</span><select class="input" data-f="unit">${regions.map((u) => `<option${u === unit ? ' selected' : ''}>${Fmt.esc(u)}</option>`).join('')}</select></label>`}
-      <p class="hint">這裡是分壇派給${Fmt.esc(unit)}的勤務（7 天前到之後 4 個月）。每一欄填會去的人的名字，按「儲存」，大家打開分壇行事曆的活動就看得到。</p>
+      ${isRegion ? '' : `<label class="form-row"><span>看哪一個</span><select class="input" data-f="unit">${[window.SITE.fentan].concat(regions).map((u) => `<option value="${Fmt.esc(u)}"${u === unit ? ' selected' : ''}>${Fmt.esc(u === window.SITE.fentan ? '分壇（全部，照活動排）' : u)}</option>`).join('')}</select></label>`}
+      ${isAll ? `<p class="hint">照分壇的活動排（7 天前到之後 4 個月）。各區、各組的名單先收起來，要看、要填再按開。</p>${allHtml()}` : `<p class="hint">這裡是分壇派給${Fmt.esc(unit)}的勤務（7 天前到之後 4 個月）。每一欄填會去的人的名字，按「儲存」，大家打開分壇行事曆的活動就看得到。</p>
       ${(data.attend || []).map(attendHtml).join('')}
-      ${data.events.length ? data.events.map(evHtml).join('') : (data.attend || []).length ? '' : '<p class="panel-empty">目前沒有分壇派給這一區的勤務</p>'}`;
+      ${data.events.length ? data.events.map(evHtml).join('') : (data.attend || []).length ? '' : '<p class="panel-empty">目前沒有分壇派給這一區的勤務</p>'}`}`;
     bindCommon();
     // 從活動頁來的：捲到那一筆勤務，游標放在第一欄
     const focusCard = focusId && view.querySelector('.roster-card.is-focus');
@@ -535,22 +562,22 @@
     const myChildren = src && mode !== 'new' && events ? events.filter((e) => e.parentId === src.id) : [];
     const legacy = src && mode !== 'new' && events && isFentanEv ? legacyChildren(src) : [];
     const dutySaved = isFentanEv ? (ev.duties || []).map((d) => ({ id: d.id, work: d.work, min: d.min, posId: d.posId, text: d.text || '', picks: Fmt.normPicks(d.picks),
-      ids: Object.fromEntries(myChildren.filter((c) => c.dutyId === d.id).map((c) => [c.unit, c.id])), oldGroup: {} })) : [];
+      kids: myChildren.filter((c) => c.dutyId === d.id), oldGroup: {} })) : [];
     const byWork = {};
     legacy.forEach((c) => {
       const work = (c.name.split(/[：:]/)[0] || c.name).slice(0, 20);
-      const row = byWork[work] || (byWork[work] = { id: newDutyId(), work, min: ((c.positions || [])[0] || {}).min || null, posId: '', text: '', picks: [], ids: {}, oldGroup: {} });
+      const row = byWork[work] || (byWork[work] = { id: newDutyId(), work, min: ((c.positions || [])[0] || {}).min || null, posId: '', text: '', picks: [], kids: [], oldGroup: {} });
       if (row.picks.indexOf('u:' + c.unit) === -1) row.picks.push('u:' + c.unit);
-      row.ids[c.unit] = c.id;
+      row.kids.push(c);
       row.oldGroup[c.unit] = c.group || '';
     });
     const dutyAll = dutySaved.concat(Object.values(byWork));
     // 固定的幾行：有排過就用排過的，沒有就空白；其他工作接在後面
     let dutyRows = (window.SITE.works || []).map((w) => {
       const i = dutyAll.findIndex((r) => r.work === w);
-      return i === -1 ? { id: newDutyId(), work: w, min: null, posId: '', text: '', picks: [], ids: {}, oldGroup: {}, fixed: true } : Object.assign(dutyAll.splice(i, 1)[0], { fixed: true });
+      return i === -1 ? { id: newDutyId(), work: w, min: null, posId: '', text: '', picks: [], kids: [], oldGroup: {}, fixed: true } : Object.assign(dutyAll.splice(i, 1)[0], { fixed: true });
     }).concat(dutyAll);
-    if (mode === 'copy') dutyRows.forEach((r) => { r.ids = {}; r.posId = ''; });
+    if (mode === 'copy') dutyRows.forEach((r) => { r.kids = []; r.posId = ''; });
     const pickChip = (r, val, label, sub) => `<label class="check-chip"><input type="checkbox" data-pick="${Fmt.esc(val)}"${r.picks.indexOf(val) !== -1 ? ' checked' : ''}> <span class="team-no">${Fmt.esc(label)}</span>${sub ? `<small>（${Fmt.esc(sub)}）</small>` : ''}</label>`;
     const dutyRow = (r) => `
       <div class="duty-row" data-id="${Fmt.esc(r.id)}" data-pos="${Fmt.esc(r.posId || '')}"${r.fixed ? ' data-fixed="1"' : ''}>
@@ -561,12 +588,12 @@
           <button type="button" class="btn btn-small" data-act="open-duty" aria-expanded="false">安排</button>
         </div>
         <div class="duty-edit" hidden>
-          <p class="team-title">區<span class="muted">（按下面的組會自動選好那幾區，也可以自己加選、取消）</span></p>
+          <p class="team-title">區<span class="muted">（選一區＝那一區一份名單）</span></p>
           <div class="push-units">${regions.map((u) => pickChip(r, 'u:' + u, u)).join('')}</div>
-          ${teams.map((t) => `<p class="team-title">${Fmt.esc(t.name)}</p>
+          ${teams.map((t) => `<p class="team-title">${Fmt.esc(t.name)}<span class="muted">（選一組＝整組一份名單，組裡各區的組長都能填）</span></p>
           <div class="push-units team-units">${t.groups.map((g) => pickChip(r, 't:' + t.name + ':' + g[0], t.pre + g[0] + t.post.replace(/（併區）$/, ''), g[1].join('、') + (g[2] ? '・' + g[2] : ''))).join('')}</div>`).join('')}
           <div class="form-row-pair duty-more">
-            <label><span>每區需要幾人（可以不填）</span><input class="input" data-f="min" inputmode="numeric" value="${r.min === null || r.min === undefined ? '' : r.min}"></label>
+            <label><span>每一份需要幾人（可以不填）</span><input class="input" data-f="min" inputmode="numeric" value="${r.min === null || r.min === undefined ? '' : r.min}"></label>
             <label><span>備註（可以不填，例：本次無上課）</span><input class="input" data-f="text" maxlength="40" value="${Fmt.esc(r.text || '')}"></label>
           </div>
           <div class="duty-edit-actions">
@@ -648,36 +675,28 @@
       form.querySelector('.duty-block').hidden = region;
       form.querySelector('.signup-row').hidden = region;
     };
-    // 一行分工：派給的區（u:）、按了的組（t:，寫組別用）
+    // 一行分工：派給誰（一區一份；一組或併區整組一份，組裡的區都能填）
     const rowData = (el) => {
       const picks = [...el.querySelectorAll('[data-pick]:checked')].map((c) => c.dataset.pick);
       const order = editableUnits();
-      const units = picks.filter((p) => p.indexOf('u:') === 0).map((p) => p.slice(2)).sort((a, b) => order.indexOf(a) - order.indexOf(b));
-      const label = (u) => {
-        const per = {};
-        picks.filter((p) => p.indexOf('t:') === 0).forEach((p) => { const fg = findGroup(p); if (fg && fg.g[1].indexOf(u) !== -1) (per[fg.t.name] ||= []).push(fg.g[0]); });
-        return Object.keys(per).map((tn) => { const t = teams.find((x) => x.name === tn); return (t.label !== undefined ? t.label : t.name) + t.pre + per[tn].join('、') + t.post; }).join('、');
-      };
-      return { picks, units, label };
+      const targets = picks.map((p) => {
+        if (p.indexOf('u:') === 0) return { key: p, units: [p.slice(2)], group: '' };
+        const fg = findGroup(p);
+        return fg ? { key: p, units: fg.g[1].slice().sort((a, b) => order.indexOf(a) - order.indexOf(b)), group: Fmt.pickText(p, true) } : null;
+      }).filter(Boolean);
+      return { picks, targets, units: targets };
     };
     const drawSum = (el) => {
       const d = rowData(el);
       const min = el.querySelector('[data-f="min"]').value.trim();
       const text = el.querySelector('[data-f="text"]').value.trim();
-      const parts = [Fmt.esc(Fmt.dutyText(d.picks)) + (d.units.length && min ? `<small>（每區 ${Fmt.esc(min)} 人）</small>` : ''), Fmt.esc(text)].filter(Boolean);
+      const parts = [Fmt.esc(Fmt.dutyText(d.picks)) + (d.units.length && min ? `<small>（每一份 ${Fmt.esc(min)} 人）</small>` : ''), Fmt.esc(text)].filter(Boolean);
       el.querySelector('.duty-sum').innerHTML = d.units.length || text ? parts.join('，') : '<span class="muted">—</span>';
     };
     form.querySelectorAll('.duty-row').forEach(drawSum);
-    // 按組＝選那幾區；取消組＝取消那幾區（同一行別的組還要的區留著）
     form.addEventListener('change', (e) => {
       const r = e.target.closest('.duty-row');
       if (!r) return;
-      const c = e.target.closest('[data-pick^="t:"]');
-      if (c) {
-        const fg = findGroup(c.dataset.pick);
-        const still = new Set([...r.querySelectorAll('[data-pick^="t:"]:checked')].flatMap((x) => (findGroup(x.dataset.pick) || { g: [0, []] }).g[1]));
-        if (fg) fg.g[1].forEach((u) => { const box = r.querySelector(`[data-pick="u:${u}"]`); if (box) box.checked = c.checked || still.has(u); });
-      }
       drawSum(r);
     });
     form.addEventListener('input', (e) => { const r = e.target.closest('.duty-row'); if (r) drawSum(r); });
@@ -693,7 +712,7 @@
       if (b.dataset.act === 'add-duty') {
         const list = form.querySelector('.duty-list');
         if (list.children.length >= 20) return;
-        list.insertAdjacentHTML('beforeend', dutyRow({ id: newDutyId(), work: '', min: null, posId: '', text: '', picks: [], ids: {}, oldGroup: {} }));
+        list.insertAdjacentHTML('beforeend', dutyRow({ id: newDutyId(), work: '', min: null, posId: '', text: '', picks: [], kids: [], oldGroup: {} }));
         const added = list.lastElementChild;
         drawSum(added);
         openRow(added, true);
@@ -779,17 +798,20 @@
         data.assign = [];
         const sent = new Set();
         form.querySelectorAll('.duty-row').forEach((el, i) => {
-          const old = dutyRows.find((r) => r.id === el.dataset.id) || { ids: {}, oldGroup: {} };
+          const old = dutyRows.find((r) => r.id === el.dataset.id) || { kids: [], oldGroup: {} };
           const work = el.querySelector('[data-f="work"]').value.trim();
           const text = el.querySelector('[data-f="text"]').value.trim();
           const d = rowData(el);
           if (!d.units.length && !text) return; // 沒排的行：略過
           if (!work) { errs.push(`第 ${i + 1} 行分工沒有填工作名稱`); return; }
           data.duties.push({ id: el.dataset.id, work, picks: d.picks, min: el.querySelector('[data-f="min"]').value.trim(), text, posId: el.dataset.pos || undefined });
-          d.units.forEach((u) => {
-            const id = old.ids[u];
-            if (id) sent.add(id);
-            data.assign.push({ id, unit: u, dutyId: el.dataset.id, group: d.label(u) || old.oldGroup[u] || '' });
+          const free = old.kids.filter((c) => !sent.has(c.id));
+          const keyOf = (c) => c.pickKey || 'u:' + c.unit;
+          // 先對同一個派給對象的，再對組裡有的區（舊資料一區一筆）
+          d.targets.forEach((t) => {
+            const hit = free.find((c) => !sent.has(c.id) && keyOf(c) === t.key) || free.find((c) => !sent.has(c.id) && !c.pickKey && t.units.indexOf(c.unit) !== -1 && t.key.indexOf('t:') === 0);
+            if (hit) sent.add(hit.id);
+            data.assign.push({ id: hit ? hit.id : undefined, unit: t.units[0], units: t.units, key: t.key, dutyId: el.dataset.id, group: t.group || old.oldGroup[t.units[0]] || '' });
           });
         });
         if (mode === 'edit') {
