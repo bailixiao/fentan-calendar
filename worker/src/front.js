@@ -14,7 +14,7 @@ const CORS = {
 const MAX_BODY = 400000; // 批次匯入最多 300 筆
 const PUBLIC_POST = { adminLogin: 1, adminLogout: 1, adminList: 1, adminSave: 1, adminDelete: 1, adminImport: 1, adminDeleteBatch: 1, adminLog: 1, adminBackup: 1,
   pushSubscribe: 1, pushUnsubscribe: 1, pushTest: 1, adminPushStats: 1, adminPushList: 1, adminPushSend: 1, adminPushCancel: 1,
-  adminAccounts: 1, adminSetAccount: 1, adminRosterList: 1, adminRosterSave: 1, adminAttendSave: 1 };
+  adminAccounts: 1, adminSetAccount: 1, adminRosterList: 1, adminRosterSave: 1, adminAttendSave: 1, adminRegroup: 1 };
 
 function json(obj, status) {
   return new Response(JSON.stringify(obj), {

@@ -60,6 +60,7 @@
         return renderForm(ev, parts[0]);
       }
       if (parts[0] === 'log') return renderLog();
+      if (parts[0] === 'regroup') return renderRegroup();
       if (parts[0] === 'import') return renderImport();
       if (parts[0] === 'push') return renderPush();
       await renderList();
@@ -258,7 +259,7 @@
     // 收起來時也看得到名字
     const namesLine = (text) => (text ? `<span class="fold-names">${Fmt.esc(text)}</span>` : '');
     const dutyNames = (ev) => [...new Set(Object.values(ev.roster || {}).flatMap((day) => Object.values(day).flat()))].join('、');
-    const dutyFold = (ev) => fold(`<span class="unit-tag">${Fmt.esc(ev.group || (ev.units && ev.units.length > 1 ? ev.units.join('、') : ev.unit))}</span> ${Fmt.esc(ev.name.split(/[：:]/)[0])}<span class="fold-count">${filled(ev) ? `已填 ${filled(ev)} 人` : '還沒填'}</span>${namesLine(dutyNames(ev))}`, evHtml(ev), ev.id === focusId);
+    const dutyFold = (ev) => fold(`<span class="unit-tag">${Fmt.esc((ev.pickKey && ev.pickKey.indexOf('t:') === 0 && Fmt.pickText(ev.pickKey, true)) || ev.group || (ev.units && ev.units.length > 1 ? ev.units.join('、') : ev.unit))}</span> ${Fmt.esc(ev.name.split(/[：:]/)[0])}<span class="fold-count">${filled(ev) ? `已填 ${filled(ev)} 人` : '還沒填'}</span>${namesLine(dutyNames(ev))}`, evHtml(ev), ev.id === focusId);
     const attendFold = (a) => {
       const n = (a.data.names || []).length + (a.data.escort || []).length + (a.data.traffic || []).length;
       const d = a.data;
@@ -409,6 +410,7 @@
         <a class="btn btn-primary" href="#/admin/new">＋ 新增活動</a>
         <button type="button" class="btn" data-act="backup">⬇ 下載備份</button>
       </div>
+      ${regroupPlan().length ? `<div class="notice"><p>有 ${regroupPlan().length} 筆志工團、烹飪團的勤務還是一區一筆，可以整理成「一組一份名單」。</p><a class="btn btn-small" href="#/admin/regroup">看看要整理哪些</a></div>` : ''}
       <div class="list-filter">
         <select class="input" data-f="unit" aria-label="單位">${unitOpts.map((u) => `<option${u === filter.unit ? ' selected' : ''}>${Fmt.esc(u)}</option>`).join('')}</select>
         <input class="input" type="search" data-f="q" placeholder="搜尋活動名稱、地點" value="${Fmt.esc(filter.q)}">
@@ -509,6 +511,81 @@
     }
   }
 
+  // ---------- 整理成組（以前一區一筆的志工團、烹飪團勤務） ----------
+
+  /** 從說明裡的「志工團第 3、4 組」「烹飪第八組」找出來：同名稱、同日期、同一組的合成一筆 */
+  function regroupPlan() {
+    if (!events) return [];
+    const teams = window.SITE.teams || [];
+    const buckets = new Map();
+    events.forEach((e) => {
+      if (e.unit === window.SITE.fentan || e.kind === '區活動' || e.pickKey) return;
+      const m = (e.note || '').match(/志工團第\s*([\d、]+)\s*組|烹飪(?:團)?第\s*([一二三四五六七八九十\d、]+)\s*組/);
+      if (!m) return;
+      const team = teams.find((t) => t.name === (m[1] ? '志工團' : '烹飪團'));
+      const keys = (m[1] || m[2]).split('、').map((k) => Fmt.normKey(`t:${team.name}:${k}`).split(':')[2]);
+      const groups = keys.map((k) => team.groups.find((g) => g[0] === k)).filter(Boolean);
+      if (!groups.length) return;
+      const id = [e.name, e.start, e.end, team.name, keys.join('、')].join('|');
+      if (!buckets.has(id)) buckets.set(id, { team, keys, groups, list: [] });
+      buckets.get(id).list.push(e);
+    });
+    const order = editableUnits();
+    return [...buckets.values()].map((b) => {
+      const units = [...new Set(b.groups.flatMap((g) => g[1]))].sort((x, y) => order.indexOf(x) - order.indexOf(y));
+      const filled = (e) => Object.values(e.roster || {}).reduce((n, d) => n + Object.values(d).reduce((m, x) => m + x.length, 0), 0);
+      const list = b.list.slice().sort((x, y) => filled(y) - filled(x));
+      const short = units.map((u) => u.replace(/^教|區$/g, '')).join('、');
+      return { keep: list[0], drop: list.slice(1), units, pickKey: `t:${b.team.name}:${b.keys[0]}`,
+        group: `${b.team.name}${b.team.pre}${b.keys.join('、')}${b.team.post}（${short}）` };
+    }).sort((x, y) => x.keep.start.localeCompare(y.keep.start));
+  }
+
+  async function renderRegroup() {
+    view.innerHTML = tabs('') + '<p class="panel-empty">載入中⋯</p>';
+    bindCommon();
+    await loadEvents();
+    const plan = regroupPlan();
+    const today = CalendarPage.today();
+    view.innerHTML = tabs('') + `
+      <h2 class="admin-sub">整理成組</h2>
+      <p class="hint">以前匯入的志工團、烹飪團勤務是一區一筆。整理後同一天、同一組合成一筆，一份名單，組裡各區的組長都能填；已經填的名單會合在一起，不會不見。</p>
+      ${plan.length ? `
+        <ul class="admin-list regroup-list">${plan.map((p) => `
+          <li class="admin-row${p.keep.end < today ? ' is-past' : ''}">
+            <div class="admin-row-main">
+              <span class="admin-row-date">${Fmt.esc(p.keep.start === p.keep.end ? Fmt.shortDate(p.keep.start) : `${Fmt.shortDate(p.keep.start)} – ${Fmt.shortDate(p.keep.end)}`)}</span>
+              <strong>${Fmt.esc(p.keep.name)}</strong>
+              <span class="card-meta">現在：${Fmt.esc([p.keep].concat(p.drop).map((e) => e.unit).join('、'))} ${p.drop.length ? '各一筆' : '一筆'} → 整理後：${Fmt.esc(p.group)} 一筆</span>
+            </div>
+          </li>`).join('')}</ul>
+        <p class="form-error" hidden></p>
+        <button type="button" class="btn btn-primary btn-block" data-act="regroup">全部整理（${plan.length} 筆）</button>`
+        : '<p class="panel-empty">都整理好了，沒有一區一筆的志工團、烹飪團勤務。</p>'}
+      <a class="btn btn-block back-btn" href="#/admin">回活動列表</a>`;
+    bindCommon();
+    const btn = view.querySelector('[data-act="regroup"]');
+    if (!btn) return;
+    btn.addEventListener('click', async () => {
+      if (!window.confirm(`確定要把這 ${plan.length} 筆整理成一組一份名單嗎？`)) return;
+      busy(true, '整理中⋯');
+      try {
+        const items = plan.map((p) => ({ keep: p.keep.id, drop: p.drop.map((e) => e.id), units: p.units, pickKey: p.pickKey, group: p.group }));
+        for (let i = 0; i < items.length; i += 100) await Api.admin('adminRegroup', { items: items.slice(i, i + 100) });
+        busy(false);
+        events = null;
+        CalendarPage.refresh(true);
+        renderRegroup();
+      } catch (err) {
+        busy(false);
+        if (err.code === 'UNAUTHORIZED') return renderLogin(err.message);
+        const box = view.querySelector('.form-error');
+        box.textContent = err.message;
+        box.hidden = false;
+      }
+    });
+  }
+
   // ---------- 新增／修改／另存新的 ----------
 
   /** 時間只給整點、半點（05:00～23:30）；原本存的時間不是整點半點的，也列出來 */
@@ -562,7 +639,7 @@
     // ---------- 分工（分壇活動用；規格第 9-5 節）：跟出席名單表一樣，固定幾行，按「安排」選 ----------
     const teams = window.SITE.teams || [];
     const isFentanEv = !ev.unit || ev.unit === fentan;
-    const findGroup = (pick) => { const [, tn, gk] = pick.split(':'); const t = teams.find((x) => x.name === tn); const g = t && t.groups.find((x) => x[0] === gk); return t && g ? { t, g } : null; };
+    const findGroup = (pick) => Fmt.findPick(pick);
     // 原本的分工（duties），加上以前用名稱掛上的各區勤務（照工作名稱合成一行）
     const myChildren = src && mode !== 'new' && events ? events.filter((e) => e.parentId === src.id) : [];
     const legacy = src && mode !== 'new' && events && isFentanEv ? legacyChildren(src) : [];
@@ -572,7 +649,8 @@
     legacy.forEach((c) => {
       const work = (c.name.split(/[：:]/)[0] || c.name).slice(0, 20);
       const row = byWork[work] || (byWork[work] = { id: newDutyId(), work, min: ((c.positions || [])[0] || {}).min || null, posId: '', text: '', picks: [], kids: [], oldGroup: {} });
-      if (row.picks.indexOf('u:' + c.unit) === -1) row.picks.push('u:' + c.unit);
+      const pk = c.pickKey ? Fmt.normKey(c.pickKey) : 'u:' + c.unit;
+      if (row.picks.indexOf(pk) === -1) row.picks.push(pk);
       row.kids.push(c);
       row.oldGroup[c.unit] = c.group || '';
     });
@@ -591,6 +669,7 @@
             : `<input class="input duty-name-input" data-f="work" maxlength="20" value="${Fmt.esc(r.work || '')}" placeholder="工作名稱" aria-label="工作名稱">`}
           <div class="duty-sum"></div>
           <button type="button" class="btn btn-small" data-act="open-duty" aria-expanded="false">安排</button>
+          <button type="button" class="btn btn-small btn-quiet-danger duty-x" data-act="${r.fixed ? 'clear-duty' : 'rm-duty'}" aria-label="${r.fixed ? '清空這行' : '刪掉這行'}" title="${r.fixed ? '清空這行' : '刪掉這行'}">✕</button>
         </div>
         <div class="duty-edit" hidden>
           <p class="team-title">區<span class="muted">（選一區＝那一區一份名單）</span></p>
@@ -811,7 +890,7 @@
           if (!work) { errs.push(`第 ${i + 1} 行分工沒有填工作名稱`); return; }
           data.duties.push({ id: el.dataset.id, work, picks: d.picks, min: el.querySelector('[data-f="min"]').value.trim(), text, posId: el.dataset.pos || undefined });
           const free = old.kids.filter((c) => !sent.has(c.id));
-          const keyOf = (c) => c.pickKey || 'u:' + c.unit;
+          const keyOf = (c) => (c.pickKey ? Fmt.normKey(c.pickKey) : 'u:' + c.unit);
           // 先對同一個派給對象的，再對組裡有的區（舊資料一區一筆）
           d.targets.forEach((t) => {
             const hit = free.find((c) => !sent.has(c.id) && keyOf(c) === t.key) || free.find((c) => !sent.has(c.id) && !c.pickKey && t.units.indexOf(c.unit) !== -1 && t.key.indexOf('t:') === 0);

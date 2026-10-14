@@ -117,9 +117,16 @@
     return out;
   }
 
+  /** 舊的烹飪團組用國字（八）：改成阿拉伯數字（8） */
+  const CN = { 一: '1', 二: '2', 三: '3', 四: '4', 五: '5', 六: '6', 七: '7', 八: '8', 九: '9', 十: '10' };
+  function normKey(p) {
+    const m = String(p || '').match(/^t:([^:]+):(.+)$/);
+    return m && CN[m[2]] ? `t:${m[1]}:${CN[m[2]]}` : String(p || '');
+  }
+
   /** 分工選的（picks）：'u:區名'＝派給一區；'t:團名:組'＝派給一組（或併區），整組一份名單 */
   function findPick(p) {
-    const [, tn, gk] = String(p).split(':');
+    const [, tn, gk] = normKey(p).split(':');
     const t = (window.SITE.teams || []).find((x) => x.name === tn);
     const g = t && t.groups.find((x) => x[0] === gk);
     return t && g ? { t, g } : null;
@@ -130,7 +137,7 @@
    * 組在、只剩部分的區：當時是把別的區取消，照「整組」算。
    */
   function normPicks(picks) {
-    const list = (picks || []).slice();
+    const list = [...new Set((picks || []).map(normKey))];
     const drop = new Set();
     list.filter((p) => p.indexOf('t:') === 0).forEach((p) => { const fg = findPick(p); if (fg) fg.g[1].forEach((u) => drop.add('u:' + u)); });
     return list.filter((p) => !drop.has(p));
@@ -139,7 +146,7 @@
   /** 一組（或一區）寫成一段：組名＋（組裡的區）；併區寫「教慈/理（併區）」。short：區名寫一個字（出席名單表用） */
   function pickText(p, short) {
     const name = (u) => (short ? u.replace(/^教|區$/g, '') : u);
-    if (p.indexOf('u:') === 0) return p.slice(2);
+    if (String(p).indexOf('u:') === 0) return p.slice(2);
     const fg = findPick(p);
     if (!fg) return '';
     const { t, g } = fg;
@@ -153,5 +160,5 @@
     return list.filter((p) => p.indexOf('t:') === 0).concat(list.filter((p) => p.indexOf('u:') === 0)).map((p) => pickText(p, short)).filter(Boolean).join('、');
   }
 
-  window.Fmt = { findPick, normPicks, pickText, dutyText, splitNames, statusBadge, rosterHtml, esc, toDateStr, parseDate, addDays, datesBetween, rocYear, weekday, shortDate, rocDate, catLabel, timeRange, cardTime, tagsHtml };
+  window.Fmt = { normKey, findPick, normPicks, pickText, dutyText, splitNames, statusBadge, rosterHtml, esc, toDateStr, parseDate, addDays, datesBetween, rocYear, weekday, shortDate, rocDate, catLabel, timeRange, cardTime, tagsHtml };
 })();

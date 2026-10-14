@@ -130,7 +130,7 @@
       return `
         <article class="linked-item">
           <div class="linked-head">
-            <span><span class="unit-tag">${Fmt.esc(l.units && l.units.length > 1 || l.group ? l.group || l.units.join('、') : l.unit)}</span> <strong>${Fmt.esc(l.name)}</strong></span>
+            <span><span class="unit-tag">${Fmt.esc((l.pickKey && l.pickKey.indexOf('t:') === 0 && Fmt.pickText(l.pickKey, true)) || (l.units && l.units.length > 1 || l.group ? l.group || l.units.join('、') : l.unit))}</span> <strong>${Fmt.esc(l.name)}</strong></span>
             ${total ? `<span class="badge badge-ok">已填 ${total} 人</span>` : '<span class="badge badge-full">還沒填名單</span>'}
           </div>
           ${l.dress || (l.deadline && l.deadline !== ev.deadline) ? `<p class="card-meta">${Fmt.esc([l.dress ? '服裝：' + l.dress : '', l.deadline && l.deadline !== ev.deadline ? Fmt.shortDate(l.deadline) + ' 截止' : ''].filter(Boolean).join('・'))}</p>` : ''}

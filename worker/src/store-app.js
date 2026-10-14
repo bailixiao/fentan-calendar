@@ -203,6 +203,44 @@ export function createStoreApp(store, opts) {
     return { event: publicEvent(ev) };
   }
 
+  /**
+   * 整理成組（2026-10-14）：以前一區一筆的志工團、烹飪團勤務，合成一組一份名單。
+   * items：[{ keep, drop: [id], units, pickKey, group }]，前端照說明裡的「志工團第 N 組」算好；名單合在一起。
+   */
+  function adminRegroup(body) {
+    const items = Array.isArray(body.items) ? body.items : [];
+    if (!items.length || items.length > 300) throw new AppError('BAD_REQUEST', '沒有要整理的');
+    const ok = editableUnits().filter((u) => u !== SITE.fentan);
+    const stamp = taipeiStamp(now());
+    let merged = 0;
+    let removed = 0;
+    items.forEach((it) => {
+      const keep = typeof it.keep === 'string' ? store.getEvent(it.keep) : null;
+      if (!keep || keep.unit === SITE.fentan) return;
+      const units = Array.isArray(it.units) ? [...new Set(it.units.map(String))].filter((u) => ok.indexOf(u) !== -1) : [];
+      if (!units.length || units.length > 6) return;
+      const drops = (Array.isArray(it.drop) ? it.drop : []).map((id) => (typeof id === 'string' && id !== keep.id ? store.getEvent(id) : null))
+        .filter((e) => e && e.unit !== SITE.fentan && e.name === keep.name && e.start === keep.start);
+      // 名單合在一起（同一天、同一欄的名字去掉重複）
+      const roster = JSON.parse(JSON.stringify(keep.roster || {}));
+      drops.forEach((e) => Object.keys(e.roster || {}).forEach((d) => Object.keys(e.roster[d]).forEach((k) => {
+        const day = roster[d] || (roster[d] = {});
+        day[k] = [...new Set((day[k] || []).concat(e.roster[d][k]))];
+      })));
+      Object.assign(keep, {
+        unit: units.indexOf(keep.unit) !== -1 ? keep.unit : units[0], units,
+        pickKey: typeof it.pickKey === 'string' ? it.pickKey.slice(0, 40) : '', group: typeof it.group === 'string' ? it.group.slice(0, 60) : '',
+        roster, updatedAt: stamp
+      });
+      store.putEvent(keep);
+      drops.forEach((e) => store.deleteEvent(e.id));
+      merged++;
+      removed += drops.length;
+    });
+    store.addLog({ time: stamp, action: '整理成組', unit: SITE.fentan, name: `志工團、烹飪團的勤務：整理 ${merged} 筆，合併掉 ${removed} 筆`, start: '', end: '' });
+    return { merged, removed };
+  }
+
   async function adminLogout(body) {
     if (typeof body.token === 'string' && body.token) store.deleteSession(await sha256(body.token));
     return {};
@@ -398,10 +436,11 @@ export function createStoreApp(store, opts) {
     adminRosterList,
     adminRosterSave,
     adminAttendSave,
+    adminRegroup,
     ...push.actions
   };
   const needsLogin = Object.assign({ adminList: 1, adminSave: 1, adminDelete: 1, adminImport: 1, adminDeleteBatch: 1, adminLog: 1, adminBackup: 1,
-    adminAccounts: 1, adminSetAccount: 1, adminRosterList: 1, adminRosterSave: 1, adminAttendSave: 1 }, push.needsLogin);
+    adminAccounts: 1, adminSetAccount: 1, adminRosterList: 1, adminRosterSave: 1, adminAttendSave: 1, adminRegroup: 1 }, push.needsLogin);
   const REGION_OK = { adminRosterList: 1, adminRosterSave: 1, adminAttendSave: 1 }; // 組長帳號只能做這些
 
   async function call(body) {

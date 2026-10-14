@@ -188,6 +188,20 @@ test('派給一組：整組一筆，組裡兩區的組長都能填同一份；�
   assert.deepEqual(cal.events.find((e) => e.name === '長青班').links[0].units, ['教慈區', '教理區']);
 });
 
+test('整理成組：一區一筆合成一組一份，名單合在一起', async () => {
+  const env = setup();
+  const sup = env.ok(await env.post({ action: 'adminLogin', password: 'test-pass' })).token;
+  const a = env.ok(await env.post({ action: 'adminSave', token: sup, event: E({ unit: '教真區', name: '志工團：統班', note: '志工團第 1 組。' }) })).event;
+  const b = env.ok(await env.post({ action: 'adminSave', token: sup, event: E({ unit: '教志區', name: '志工團：統班', note: '志工團第 1 組。' }) })).event;
+  env.ok(await env.post({ action: 'adminRosterSave', token: sup, id: a.id, date: '2026-10-24', key: '_', names: '測試甲' }));
+  env.ok(await env.post({ action: 'adminRosterSave', token: sup, id: b.id, date: '2026-10-24', key: '_', names: '測試乙、測試甲' }));
+  const r = env.ok(await env.post({ action: 'adminRegroup', token: sup, items: [{ keep: a.id, drop: [b.id], units: ['教真區', '教志區'], pickKey: 't:志工團:1', group: '志工團第 1 組（真、志）' }] }));
+  assert.deepEqual(r, { merged: 1, removed: 1 });
+  const list = env.ok(await env.post({ action: 'adminList', token: sup })).events;
+  assert.equal(list.length, 1);
+  assert.deepEqual([list[0].units, list[0].group, list[0].roster['2026-10-24']._], [['教真區', '教志區'], '志工團第 1 組（真、志）', ['測試甲', '測試乙']]);
+});
+
 test('以前用名稱掛上的各區勤務：帶進分工後改用 parentId，名單從「_」搬過來；drop 的刪掉', async () => {
   const env = setup();
   const sup = env.ok(await env.post({ action: 'adminLogin', password: 'test-pass' })).token;

@@ -770,7 +770,8 @@ select.input { appearance: auto; }
 .team-units .check-chip input { flex-shrink: 0; }
 .team-no { white-space: nowrap; }
 .team-units .check-chip small { color: var(--muted); margin: 0; }
-.duty-line { display: grid; grid-template-columns: 5.5em 1fr auto; gap: 10px; align-items: center; }
+.duty-line { display: grid; grid-template-columns: 5.5em 1fr auto auto; gap: 8px; align-items: center; }
+.duty-x { min-width: 40px; padding: 0 10px; }
 .duty-name { font-weight: 700; font-size: 1.05rem; }
 .duty-name-input { min-width: 0; }
 .duty-line .duty-sum { min-width: 0; }
@@ -817,6 +818,7 @@ select.input { appearance: auto; }
 .fill-fold[open] .fold-names { display: none; }
 .fill-fold[open] > summary { color: var(--accent); font-weight: 700; }
 .fill-fold .roster-card { margin: 4px 0 10px; }
+.regroup-list .is-past { opacity: .6; }
 .check-all { display: flex; gap: 8px; margin: 4px 0 8px; }
 .deadline { margin: 6px 0 0; font-weight: 700; color: var(--ink-2); }
 .deadline.is-closed { color: var(--accent); }

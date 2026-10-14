@@ -287,7 +287,7 @@ function sortLinks(list) {
 
 /** 掛著的各區勤務：附了愿項目與各區組長填的名單（規格第 9-4 節）。截止日期：勤務自己沒填就用掛的分壇活動的 */
 function linkOf(e, parent) {
-  return { id: e.id, unit: e.unit, units: Array.isArray(e.units) ? e.units : [], name: e.name, group: e.group || '', dutyId: e.dutyId || '', start: e.start, end: e.end, dress: e.dress || '',
+  return { id: e.id, unit: e.unit, units: Array.isArray(e.units) ? e.units : [], pickKey: e.pickKey || '', name: e.name, group: e.group || '', dutyId: e.dutyId || '', start: e.start, end: e.end, dress: e.dress || '',
     deadline: e.deadline || (parent && parent.deadline) || '', positions: e.positions || [], roster: e.roster || {} };
 }
 
