@@ -813,6 +813,8 @@ select.input { appearance: auto; }
 .fill-fold { border-top: 1px solid var(--line); }
 .fill-fold > summary { display: flex; align-items: center; gap: 8px; min-height: var(--tap); cursor: pointer; flex-wrap: wrap; }
 .fill-fold .fold-count { margin-left: auto; color: var(--ink-2); font-size: .9rem; }
+.fill-fold .fold-names { flex-basis: 100%; margin: -6px 0 8px; color: var(--ink-2); font-size: .92rem; font-weight: 400; overflow-wrap: anywhere; }
+.fill-fold[open] .fold-names { display: none; }
 .fill-fold[open] > summary { color: var(--accent); font-weight: 700; }
 .fill-fold .roster-card { margin: 4px 0 10px; }
 .check-all { display: flex; gap: 8px; margin: 4px 0 8px; }

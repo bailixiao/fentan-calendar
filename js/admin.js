@@ -255,10 +255,15 @@
     const isAll = !isRegion && unit === window.SITE.fentan;
     const filled = (ev) => Object.values(ev.roster || {}).reduce((n, day) => n + Object.values(day).reduce((m, x) => m + x.length, 0), 0);
     const fold = (summary, inner, open) => `<details class="fill-fold"${open ? ' open' : ''}><summary>${summary}</summary>${inner}</details>`;
-    const dutyFold = (ev) => fold(`<span class="unit-tag">${Fmt.esc(ev.group || (ev.units && ev.units.length > 1 ? ev.units.join('、') : ev.unit))}</span> ${Fmt.esc(ev.name.split(/[：:]/)[0])}<span class="fold-count">${filled(ev) ? `已填 ${filled(ev)} 人` : '還沒填'}</span>`, evHtml(ev), ev.id === focusId);
+    // 收起來時也看得到名字
+    const namesLine = (text) => (text ? `<span class="fold-names">${Fmt.esc(text)}</span>` : '');
+    const dutyNames = (ev) => [...new Set(Object.values(ev.roster || {}).flatMap((day) => Object.values(day).flat()))].join('、');
+    const dutyFold = (ev) => fold(`<span class="unit-tag">${Fmt.esc(ev.group || (ev.units && ev.units.length > 1 ? ev.units.join('、') : ev.unit))}</span> ${Fmt.esc(ev.name.split(/[：:]/)[0])}<span class="fold-count">${filled(ev) ? `已填 ${filled(ev)} 人` : '還沒填'}</span>${namesLine(dutyNames(ev))}`, evHtml(ev), ev.id === focusId);
     const attendFold = (a) => {
       const n = (a.data.names || []).length + (a.data.escort || []).length + (a.data.traffic || []).length;
-      return fold(`<span class="unit-tag">${Fmt.esc(a.row)}</span> 出席名單<span class="fold-count">${n ? `${n} 人` : '還沒填'}</span>`, attendHtml(a), false);
+      const d = a.data;
+      const text = [(d.names || []).join('、'), (d.escort || []).length ? '陪班：' + d.escort.join('、') : '', (d.traffic || []).length ? '交通：' + d.traffic.join('、') : ''].filter(Boolean).join('，');
+      return fold(`<span class="unit-tag">${Fmt.esc(a.row)}</span> 出席名單<span class="fold-count">${n ? `${n} 人` : '還沒填'}</span>${namesLine(text)}`, attendHtml(a), false);
     };
     const allHtml = () => {
       const parents = data.parents || [];
