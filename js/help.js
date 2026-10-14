@@ -75,7 +75,7 @@
       <ol class="help-steps">
         <li><span class="help-num">1</span><span>新增或修改那個班（分壇的活動），勾「各區報名出席」，需要的話填截止日期；上課時間、地點、提醒寫在「說明」。</span></li>
         <li><span class="help-num">2</span><span>下面「分工」排好視聽、交通、勤務、導覽、烹飪。</span></li>
-        <li><span class="help-num">3</span><span>各區組長登入「填名單」，填這個班的出席、陪班，備註可以寫載道親、交通接駁。教力/發、教慈/理是同一行，兩區的組長都可以填。</span></li>
+        <li><span class="help-num">3</span><span>各區組長登入「填名單」，填這個班的出席、陪班、交通（載道親、接送的人）。教力/發、教慈/理是同一行，兩區的組長都可以填。</span></li>
         <li><span class="help-num">4</span><span>打開那個班，「出席名單」就是整理好的表，按「📋 複製文字」貼到 LINE。</span></li>
       </ol>` },
     { cat: '管理者', q: '其他區的活動怎麼一次匯入很多筆？', img: 'admin-import.png', a: `

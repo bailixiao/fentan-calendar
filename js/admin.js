@@ -225,7 +225,7 @@
         <form class="attend-fill" data-id="${Fmt.esc(a.id)}" data-row="${Fmt.esc(a.row)}">
           ${ta('names', '出席', a.data.names || [])}
           ${ta('escort', '陪班', a.data.escort || [])}
-          <label class="form-row"><span>備註（不算人數，例：載道親：王小明、交通接駁）</span><input class="input" name="note" maxlength="100" value="${Fmt.esc(a.data.note || '')}"${lock}></label>
+          ${ta('traffic', '交通', a.data.traffic || [])}
           <div class="roster-fill-actions"><button type="submit" class="btn btn-primary btn-small"${lock ? ' disabled' : ''}>儲存</button><span class="muted" data-msg></span></div>
         </form>
       </article>`;
@@ -285,15 +285,19 @@
       f.names.addEventListener('input', () => { preview(f); f.querySelector('[data-msg]').textContent = '還沒儲存'; });
     });
     view.querySelectorAll('.attend-fill').forEach((f) => {
-      let count = () => ['names', 'escort'].forEach((k) => {
+      let count = () => ['names', 'escort', 'traffic'].forEach((k) => {
         f.querySelector(`[data-count="${k}"]`).textContent = Fmt.splitNames(f[k].value).length;
         f.querySelector(`[data-preview="${k}"]`).innerHTML = previewHtml(f[k].value, 0);
       });
       // 同一個人寫在出席、陪班兩邊
       const both = () => {
-        const names = Fmt.splitNames(f.names.value);
-        const dup = Fmt.splitNames(f.escort.value).filter((n) => names.indexOf(n) !== -1);
-        if (dup.length) f.querySelector('[data-preview="escort"]').insertAdjacentHTML('beforeend', `<p class="name-warn">${dup.map((n) => `「${Fmt.esc(n)}」`).join('')}出席、陪班兩邊都有，會算兩次，請只留一邊。</p>`);
+        const seen = Fmt.splitNames(f.names.value);
+        ['escort', 'traffic'].forEach((k) => {
+          const list = Fmt.splitNames(f[k].value);
+          const dup = list.filter((n) => seen.indexOf(n) !== -1);
+          if (dup.length) f.querySelector(`[data-preview="${k}"]`).insertAdjacentHTML('beforeend', `<p class="name-warn">${dup.map((n) => `「${Fmt.esc(n)}」`).join('')}上面已經寫過了，會算兩次，請只留一個地方。</p>`);
+          list.forEach((n) => seen.push(n));
+        });
       };
       const count0 = count;
       count = () => { count0(); both(); };
@@ -302,7 +306,7 @@
       f.addEventListener('submit', async (e) => {
         e.preventDefault();
         const msg = f.querySelector('[data-msg]');
-        const odd = Fmt.splitNames(f.names.value + '、' + f.escort.value).filter((n) => n.length > 4 && n.length <= 20);
+        const odd = Fmt.splitNames(f.names.value + '、' + f.escort.value + '、' + f.traffic.value).filter((n) => n.length > 4 && n.length <= 20);
         if (odd.length && !window.confirm(`${odd.map((n) => `「${n}」`).join('')}超過 4 個字，確定是一個人的名字嗎？
 
 按「確定」照這樣儲存；按「取消」回去把名字拆開（中間加空格或「、」）。`)) {
@@ -311,11 +315,11 @@
         }
         msg.textContent = '儲存中⋯';
         try {
-          const res = await Api.admin('adminAttendSave', { id: f.dataset.id, row: f.dataset.row, names: f.names.value, escort: f.escort.value, note: f.note.value });
-          const d = (res.event.attend || {})[f.dataset.row] || { names: [], escort: [], note: '' };
+          const res = await Api.admin('adminAttendSave', { id: f.dataset.id, row: f.dataset.row, names: f.names.value, escort: f.escort.value, traffic: f.traffic.value });
+          const d = Object.assign({ names: [], escort: [], traffic: [] }, (res.event.attend || {})[f.dataset.row] || {});
           f.names.value = d.names.join('、');
           f.escort.value = d.escort.join('、');
-          f.note.value = d.note;
+          f.traffic.value = d.traffic.join('、');
           count();
           msg.textContent = '已儲存';
           CalendarPage.refresh(true);

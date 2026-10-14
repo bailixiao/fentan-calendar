@@ -55,9 +55,9 @@
   /** 出席名單表（規格第 9-6 節）：上面一區一行（併區合成一行），下面是分工，最後合計、備註。回傳 { rows, duty, total, title } */
   function sheetOf(ev, date) {
     const rows = window.SITE.attendRows.map(([label, units]) => {
-      const d = (ev.attend || {})[label] || { names: [], escort: [], note: '' };
-      const text = [d.names.join('、'), d.escort.length ? '陪班：' + d.escort.join('、') : '', d.note].filter(Boolean).join('，');
-      return { label, units, text, n: d.names.length + d.escort.length };
+      const d = Object.assign({ names: [], escort: [], traffic: [], note: '' }, (ev.attend || {})[label] || {});
+      const text = [d.names.join('、'), d.escort.length ? '陪班：' + d.escort.join('、') : '', d.traffic.length ? '交通：' + d.traffic.join('、') : '', d.note].filter(Boolean).join('，');
+      return { label, units, text, n: d.names.length + d.escort.length + d.traffic.length };
     });
     const duties = ev.duties || [];
     const works = (window.SITE.works || []).slice(); // 照長青班出席名單的順序
@@ -97,7 +97,7 @@
         </table></div>
         ${ev.note ? `<p class="sheet-note">${Fmt.esc(ev.note).replace(/\n/g, '<br>')}</p>` : ''}
         <div class="sheet-actions"><button type="button" class="btn" data-act="copy-sheet">📋 複製文字（貼到 LINE）</button><span class="muted" data-copied></span></div>
-        <p class="hint">${closed ? '名單已截止。' : '各區組長按自己那一行的「報名」填出席、陪班名單。'}</p>
+        <p class="hint">${closed ? '名單已截止。' : '各區組長按自己那一行的「報名」填出席、陪班、交通名單。'}</p>
       </section>`;
   }
 

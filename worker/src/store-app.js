@@ -132,7 +132,7 @@ export function createStoreApp(store, opts) {
     const row = SITE.attendRows.find((r) => r[1].indexOf(unit) !== -1);
     const attend = row ? store.allEvents().filter((e) => e.unit === SITE.fentan && e.signup === true && e.end >= from && e.start <= to).map((e) => ({
       id: e.id, name: e.name, start: e.start, end: e.end, startTime: e.startTime || '', endTime: e.endTime || '', location: e.location || '', note: e.note || '',
-      row: row[0], data: (e.attend || {})[row[0]] || { names: [], escort: [], note: '' }, deadline: e.deadline || '', closed: !!e.deadline && today > e.deadline
+      row: row[0], data: Object.assign({ names: [], escort: [], traffic: [], note: '' }, (e.attend || {})[row[0]] || {}), deadline: e.deadline || '', closed: !!e.deadline && today > e.deadline
     })) : [];
     return { unit, today, attend: sortEvents(attend), events: sortEvents(events).map((e) => Object.assign(publicEvent(e), { deadline: dl[e.id] || e.deadline || '', closed: !!dl[e.id] && today > dl[e.id] })) };
   }
@@ -162,7 +162,7 @@ export function createStoreApp(store, opts) {
     return { event: publicEvent(ev) };
   }
 
-  /** 組長填出席名單（規格第 9-6 節）：出席、陪班（算人數）、備註 */
+  /** 組長填出席名單（規格第 9-6 節）：出席、陪班、交通（都算人數）；note 是舊的備註（畫面已經拿掉，沒送就清掉） */
   function adminAttendSave(body, who) {
     const ev = typeof body.id === 'string' ? store.getEvent(body.id) : null;
     if (!ev || ev.unit !== SITE.fentan || ev.signup !== true) throw new AppError('NOT_FOUND', '找不到這個班，或這個班沒有開放各區報名出席');
@@ -174,12 +174,12 @@ export function createStoreApp(store, opts) {
     }
     const note = typeof body.note === 'string' ? body.note.replace(/\s+/g, ' ').trim() : '';
     if (note.length > 100) throw new AppError('BAD_REQUEST', '備註最多 100 字');
-    const data = { names: cleanRosterNames(body.names), escort: cleanRosterNames(body.escort), note };
+    const data = { names: cleanRosterNames(body.names), escort: cleanRosterNames(body.escort), traffic: cleanRosterNames(body.traffic), note };
     const attend = Object.assign({}, ev.attend || {});
-    if (data.names.length || data.escort.length || data.note) attend[row[0]] = data; else delete attend[row[0]];
+    if (data.names.length || data.escort.length || data.traffic.length || data.note) attend[row[0]] = data; else delete attend[row[0]];
     ev.attend = attend;
     store.putEvent(ev);
-    store.addLog({ time: taipeiStamp(now()), action: '填出席', unit: row[1].join('、'), name: `${ev.name}：${data.names.length + data.escort.length} 人（${who ? who + '組長' : SUPER}）`, start: ev.start, end: ev.end, id: ev.id });
+    store.addLog({ time: taipeiStamp(now()), action: '填出席', unit: row[1].join('、'), name: `${ev.name}：${data.names.length + data.escort.length + data.traffic.length} 人（${who ? who + '組長' : SUPER}）`, start: ev.start, end: ev.end, id: ev.id });
     return { event: publicEvent(ev) };
   }
 

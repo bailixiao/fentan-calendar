@@ -194,9 +194,9 @@ test('各區報名出席：開了才能填；併區兩區都可以填同一行�
   const li = env.ok(await env.post({ action: 'adminLogin', account: '教理區', password: 'pass-教理區' })).token;
   const list = env.ok(await env.post({ action: 'adminRosterList', token: ci }));
   assert.deepEqual(list.attend.map((a) => [a.name, a.row]), [['長青班', '教慈/理']]);
-  env.ok(await env.post({ action: 'adminAttendSave', token: ci, id: cls.id, row: '教慈/理', names: '測試甲 測試乙', escort: '王小明', note: '載道親：李小華' }));
-  const res = env.ok(await env.post({ action: 'adminAttendSave', token: li, id: cls.id, row: '教慈/理', names: '測試甲、測試乙、測試丙', escort: '王小明', note: '' }));
-  assert.deepEqual(res.event.attend['教慈/理'], { names: ['測試甲', '測試乙', '測試丙'], escort: ['王小明'], note: '' });
+  env.ok(await env.post({ action: 'adminAttendSave', token: ci, id: cls.id, row: '教慈/理', names: '測試甲 測試乙', escort: '王小明', traffic: '李小華' }));
+  const res = env.ok(await env.post({ action: 'adminAttendSave', token: li, id: cls.id, row: '教慈/理', names: '測試甲、測試乙、測試丙', escort: '王小明', traffic: '李小華' }));
+  assert.deepEqual(res.event.attend['教慈/理'], { names: ['測試甲', '測試乙', '測試丙'], escort: ['王小明'], traffic: ['李小華'], note: '' });
   let r = await env.post({ action: 'adminAttendSave', token: ci, id: cls.id, row: '教真', names: '測試丁' });
   assert.match(r.error.message, /只能填自己區/);
   r = await env.post({ action: 'adminAttendSave', token: ci, id: other.id, row: '教慈/理', names: '測試丁' });

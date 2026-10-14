@@ -162,7 +162,7 @@ export function publicEvent(ev) {
     kind: ev.unit === SITE.fentan ? '' : ev.kind || KINDS[0],
     duties: ev.unit === SITE.fentan && Array.isArray(ev.duties) ? ev.duties : [],
     signup: ev.unit === SITE.fentan && ev.signup === true, // 各區報名出席（規格第 9-6 節）
-    attend: ev.unit === SITE.fentan && ev.attend && typeof ev.attend === 'object' ? ev.attend : {}, // 出席名單：區的那一行 → { names, escort, note }
+    attend: ev.unit === SITE.fentan && ev.attend && typeof ev.attend === 'object' ? ev.attend : {}, // 出席名單：區的那一行 → { names, escort, traffic, note }
     parentId: ev.parentId || '', dutyId: ev.dutyId || '',
     positions: Array.isArray(ev.positions) ? ev.positions : [],
     roster: ev.roster && typeof ev.roster === 'object' ? ev.roster : {} // 各區組長填的名單：日期 → 了愿項目（沒有項目用 _）→ 名字（規格第 9-4 節）
