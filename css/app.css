@@ -794,7 +794,9 @@ select.input { appearance: auto; }
 .sheet-table .num { width: 3em; text-align: center; font-variant-numeric: tabular-nums; }
 .sheet-table .sheet-duty th { background: var(--paper-2); }
 .sheet-table tfoot th, .sheet-table tfoot td { font-weight: 700; background: var(--paper-2); }
-.sheet-fill { text-decoration: none; }
+.sheet-cell { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.sheet-cell > span { min-width: 0; }
+.sheet-table .sheet-fill { flex-shrink: 0; min-height: 32px; padding: 0 12px; font-size: .9rem; }
 .sheet-note { margin: 8px 0 0; padding: 8px 12px; border: 1px solid var(--line); border-radius: var(--radius); color: var(--accent); font-weight: 700; }
 .sheet-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
 .check-all { display: flex; gap: 8px; margin: 4px 0 8px; }

@@ -85,7 +85,7 @@
     const date = ev.start;
     const s = sheetOf(ev, date);
     const closed = ev.deadline && today() > ev.deadline;
-    const tr = (r, fill) => `<tr><th scope="row">${Fmt.esc(r.label)}</th><td>${r.text ? Fmt.esc(r.text) : '<span class="muted">—</span>'}${fill && !closed ? ` <a class="sheet-fill" href="#/admin/fill/${encodeURIComponent(r.units[0])}/${encodeURIComponent(ev.id)}" aria-label="填${Fmt.esc(r.label)}的出席名單">✏️</a>` : ''}</td><td class="num">${r.n || ''}</td></tr>`;
+    const tr = (r, fill) => `<tr><th scope="row">${Fmt.esc(r.label)}</th><td>${fill && !closed ? `<div class="sheet-cell"><span>${r.text ? Fmt.esc(r.text) : '<span class="muted">—</span>'}</span><a class="btn btn-small sheet-fill" href="#/admin/fill/${encodeURIComponent(r.units[0])}/${encodeURIComponent(ev.id)}" aria-label="${Fmt.esc(r.label)}報名">報名</a></div>` : r.text ? Fmt.esc(r.text) : '<span class="muted">—</span>'}</td><td class="num">${r.n || ''}</td></tr>`;
     return `
       <section class="detail-section sheet">
         <h2>出席名單<span class="h2-sub">共 ${s.total} 人</span></h2>
@@ -97,7 +97,7 @@
         </table></div>
         ${ev.note ? `<p class="sheet-note">${Fmt.esc(ev.note).replace(/\n/g, '<br>')}</p>` : ''}
         <div class="sheet-actions"><button type="button" class="btn" data-act="copy-sheet">📋 複製文字（貼到 LINE）</button><span class="muted" data-copied></span></div>
-        <p class="hint">${closed ? '名單已截止。' : '各區組長按自己那一行的 ✏️ 填出席、陪班名單。'}</p>
+        <p class="hint">${closed ? '名單已截止。' : '各區組長按自己那一行的「報名」填出席、陪班名單。'}</p>
       </section>`;
   }
 
