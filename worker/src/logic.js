@@ -74,6 +74,22 @@ function cleanPositions(list, newId, errs) {
   return out;
 }
 
+/** 分壇活動的分工：[{ id, work, picks, min, posId }]；picks＝'u:區名' 或 't:團名:組'（前端畫面用，伺服器只存） */
+function cleanDuties(list, makeId, errs) {
+  if (!Array.isArray(list)) return [];
+  if (list.length > 20) errs.push('分工最多 20 項');
+  return list.slice(0, 20).map((d, i) => {
+    const work = str(d && d.work);
+    if (!work) errs.push(`第 ${i + 1} 項分工沒有填工作`);
+    else if (work.length > 20) errs.push(`分工「${work}」最多 20 字`);
+    const picks = Array.isArray(d && d.picks) ? d.picks.filter((x) => typeof x === 'string' && x.length <= 40).slice(0, 60) : [];
+    const min = intOrNull(d && d.min, `「${work}」的需要人數`, errs);
+    const id = typeof d.id === 'string' && /^D-[\w-]{1,40}$/.test(d.id) ? d.id : makeId().replace(/^P-/, 'D-');
+    const posId = typeof d.posId === 'string' && /^P-[\w-]{1,40}$/.test(d.posId) ? d.posId : makeId();
+    return { id, work, picks, min, posId };
+  });
+}
+
 function str(v) {
   return typeof v === 'string' ? v.trim() : v === undefined || v === null ? '' : String(v).trim();
 }
@@ -101,7 +117,7 @@ export function cleanEvent(input, newId) {
   };
   const errs = [];
   // 單位是某一區：分壇分配（預設）或區活動；了愿項目選填
-  if (ev.unit === SITE.fentan) ev.group = '';
+  if (ev.unit === SITE.fentan) { ev.group = ''; ev.duties = cleanDuties(input.duties, makeId, errs); }
   if (ev.unit && ev.unit !== SITE.fentan) {
     ev.kind = str(input.kind) || KINDS[0];
     if (KINDS.indexOf(ev.kind) === -1) errs.push('種類要是「分壇分配」或「區活動」');
@@ -142,6 +158,8 @@ export function publicEvent(ev) {
     start: ev.start, end: ev.end, startTime: ev.startTime || '', endTime: ev.endTime || '',
     group: ev.group || '', location: ev.location || '', dress: ev.dress || '', deadline: ev.deadline || '', note: ev.note || '', link: ev.link || '',
     kind: ev.unit === SITE.fentan ? '' : ev.kind || KINDS[0],
+    duties: ev.unit === SITE.fentan && Array.isArray(ev.duties) ? ev.duties : [],
+    parentId: ev.parentId || '', dutyId: ev.dutyId || '',
     positions: Array.isArray(ev.positions) ? ev.positions : [],
     roster: ev.roster && typeof ev.roster === 'object' ? ev.roster : {} // 各區組長填的名單：日期 → 了愿項目（沒有項目用 _）→ 名字（規格第 9-4 節）
   };
@@ -290,8 +308,9 @@ export function buildCalendar(events, test) {
   const items = fentan.map((f) => {
     const key = parentKey(f.name);
     const links = [];
+    assigned.forEach((a) => { if (a.parentId === f.id && !used.has(a.id)) { links.push(linkOf(a, f)); used.add(a.id); } });
     if (key.length >= 2) {
-      assigned.forEach((a) => { if (!used.has(a.id) && overlap(a, f) && coreName(a.name).indexOf(key) !== -1) { links.push(linkOf(a, f)); used.add(a.id); } });
+      assigned.forEach((a) => { if (!a.parentId && !used.has(a.id) && overlap(a, f) && coreName(a.name).indexOf(key) !== -1) { links.push(linkOf(a, f)); used.add(a.id); } });
     }
     return Object.assign({}, f, { links: sortLinks(links) });
   });

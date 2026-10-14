@@ -63,6 +63,14 @@
         <li><span class="help-num">3</span><span>要改就按那一筆的「修改」；同樣的活動換日期，用「另存新的」最快。</span></li>
       </ol>
       <p>每一筆新增、修改、刪除都會記在「操作紀錄」。</p>` },
+    { cat: '管理者', q: '分壇的活動要派志工團、烹飪團或哪幾區幫忙，怎麼排？', a: `
+      <ol class="help-steps">
+        <li><span class="help-num">1</span><span>新增或修改分壇的活動（例如統班），拉到最下面「分工」，按「＋ 加一項分工」。</span></li>
+        <li><span class="help-num">2</span><span>按工作（烹飪、交通、視聽、勤務、導覽，或自己打），需要的話填每區需要幾人。</span></li>
+        <li><span class="help-num">3</span><span>按「選派給誰」，區、志工團的組、烹飪團的組、併區都可以混著選，按了變深色就是選了。上面會寫「派給：教全區（志工團第 12 組）、⋯」。</span></li>
+        <li><span class="help-num">4</span><span>一個活動要好幾種幫忙，就再加一項。按「儲存」，每一區會自動建好勤務，掛在這個活動下面，各區組長去填名單。</span></li>
+      </ol>
+      <p>之後改活動的日期、地點，各區的勤務會跟著改；拿掉某一區，那一區的勤務會刪掉（組長填過名單的會先問你）。</p>` },
     { cat: '管理者', q: '其他區的活動怎麼一次匯入很多筆？', img: 'admin-import.png', a: `
       <ol class="help-steps">
         <li><span class="help-num">1</span><span>把各區的活動資料（照片、文字、表格）交給 Claude，Claude 會整理成一個匯入檔（.json）。</span></li>

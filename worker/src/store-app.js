@@ -193,7 +193,8 @@ export function createStoreApp(store, opts) {
     if (id) {
       const old = store.getEvent(id);
       if (!old) throw new AppError('NOT_FOUND', '找不到這筆活動，可能已經被刪除');
-      saved = Object.assign({ id, createdAt: old.createdAt }, clean, old.batch ? { batch: old.batch } : {}, old.roster ? { roster: old.roster } : {}, { updatedAt: stamp });
+      saved = Object.assign({ id, createdAt: old.createdAt }, clean, old.batch ? { batch: old.batch } : {}, old.roster ? { roster: old.roster } : {},
+        old.parentId && clean.unit !== SITE.fentan ? { parentId: old.parentId, dutyId: old.dutyId || '' } : {}, { updatedAt: stamp });
       store.putEvent(saved);
       log('修改', saved);
     } else {
@@ -201,7 +202,60 @@ export function createStoreApp(store, opts) {
       store.putEvent(saved);
       log('新增', saved);
     }
-    return { event: saved };
+    const children = saved.unit === SITE.fentan ? syncChildren(saved, body.event, stamp) : null;
+    return children ? { event: saved, children } : { event: saved };
+  }
+
+  /**
+   * 分壇活動的分工 → 各區勤務（規格第 9-5 節）。assign：[{ id?, unit, dutyId, group }]，每一項、每一區一筆；
+   * 已經有的（同一個 id，或同一項分工同一區）就改，名單留著；沒列到的這筆活動自己的勤務刪掉；drop 是要拿掉的舊資料（用名稱掛上的）。
+   * 沒送 assign（例如匯入）就不動。
+   */
+  function syncChildren(parent, input, stamp) {
+    const assign = input && Array.isArray(input.assign) ? input.assign : null;
+    if (!assign) return null;
+    if (assign.length > 300) throw new AppError('BAD_REQUEST', '分工太多了');
+    const all = store.allEvents();
+    const byId = new Map(all.map((e) => [e.id, e]));
+    const mine = all.filter((e) => e.parentId === parent.id);
+    const units = editableUnits();
+    const used = new Set();
+    const seen = new Set();
+    const saved = [];
+    assign.forEach((a) => {
+      const unit = a && typeof a.unit === 'string' ? a.unit : '';
+      if (unit === SITE.fentan || units.indexOf(unit) === -1) throw new AppError('BAD_REQUEST', '分工的單位不對：' + unit.slice(0, 20));
+      const duty = (parent.duties || []).find((d) => d.id === a.dutyId);
+      if (!duty) throw new AppError('BAD_REQUEST', '分工資料不對，請重新整理再試一次');
+      if (seen.has(duty.id + '|' + unit)) return;
+      seen.add(duty.id + '|' + unit);
+      let old = typeof a.id === 'string' ? byId.get(a.id) || null : null;
+      if (old && (old.unit !== unit || used.has(old.id) || (old.parentId && old.parentId !== parent.id))) old = null;
+      if (!old) old = mine.find((e) => e.dutyId === duty.id && e.unit === unit && !used.has(e.id)) || null;
+      // 了愿項目：一項（工作名稱、需要人數）；舊資料自己有別的了愿項目就照舊。名單從「_」搬到這一項
+      const ours = old && (old.positions || []).length && !(old.positions.length === 1 && old.positions[0].id === duty.posId);
+      const roster = old && old.roster ? JSON.parse(JSON.stringify(old.roster)) : {};
+      if (!ours) Object.keys(roster).forEach((d) => { if (roster[d]._) { roster[d][duty.posId] = roster[d]._; delete roster[d]._; } });
+      const ev = Object.assign({ dress: '', deadline: '', note: '', link: '' }, old || {}, {
+        id: old ? old.id : newEventId(now(), randomHex(4)),
+        unit, category: '勤務', kind: '分壇分配', name: `${duty.work}：${parent.name}`,
+        group: typeof a.group === 'string' ? a.group.trim().slice(0, 60) : '',
+        start: parent.start, end: parent.end, startTime: parent.startTime || '', endTime: parent.endTime || '', location: parent.location || '',
+        positions: ours ? old.positions : [{ id: duty.posId, name: duty.work, min: duty.min, max: null }],
+        roster, parentId: parent.id, dutyId: duty.id, createdAt: old ? old.createdAt : stamp, updatedAt: stamp
+      });
+      used.add(ev.id);
+      store.putEvent(ev);
+      saved.push(ev);
+    });
+    const drop = new Set(Array.isArray(input.drop) ? input.drop.filter((x) => typeof x === 'string') : []);
+    const removed = all.filter((e) => !used.has(e.id) && e.unit !== SITE.fentan && (e.parentId === parent.id || (!e.parentId && drop.has(e.id))));
+    removed.forEach((e) => store.deleteEvent(e.id));
+    if (saved.length || removed.length) {
+      store.addLog({ time: stamp, action: '分工', unit: [...new Set(saved.map((e) => e.unit))].join('、') || SITE.fentan,
+        name: `${parent.name}：${saved.length} 筆${removed.length ? `，拿掉 ${removed.length} 筆` : ''}`, start: parent.start, end: parent.end, id: parent.id });
+    }
+    return saved;
   }
 
   function adminDelete(body) {
@@ -209,7 +263,10 @@ export function createStoreApp(store, opts) {
     if (!old) throw new AppError('NOT_FOUND', '找不到這筆活動，可能已經被刪除');
     store.deleteEvent(old.id);
     log('刪除', old);
-    return {};
+    // 分壇活動刪掉：在它裡面排的分工（各區勤務）一起刪
+    const children = old.unit === SITE.fentan ? store.allEvents().filter((e) => e.parentId === old.id) : [];
+    children.forEach((e) => { store.deleteEvent(e.id); log('刪除', e); });
+    return { deleted: 1 + children.length };
   }
 
   /** 同一筆活動的判斷：同單位、同名稱、同開始日期與時間 */

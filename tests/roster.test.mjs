@@ -137,6 +137,53 @@ test('勾志工團、烹飪團的組派的：每區記自己的組別，掛在�
   assert.deepEqual(item.links.map((l) => l.group), ['志工團第 3、13 組', '志工團第 13 組']);
 });
 
+test('分壇活動裡排分工：自動建各區勤務、改日期跟著改、名單留著、拿掉的刪掉、刪活動一起刪', async () => {
+  const env = setup();
+  const sup = env.ok(await env.post({ action: 'adminLogin', password: 'test-pass' })).token;
+  const duties = [{ id: 'D-a', work: '烹飪', picks: ['t:烹飪團:八'], min: 15 }, { id: 'D-b', work: '交通', picks: ['t:志工團:12', 'u:教真區'] }];
+  const assign = [{ unit: '教慈區', dutyId: 'D-a', group: '烹飪團第八組' }, { unit: '教全區', dutyId: 'D-b', group: '志工團第 12 組' }, { unit: '教真區', dutyId: 'D-b', group: '' }];
+  let res = env.ok(await env.post({ action: 'adminSave', token: sup, event: E({ unit: '分壇', category: '道務', name: '統班', location: '彌勒山', duties, assign }) }));
+  const parent = res.event;
+  assert.deepEqual(res.children.map((c) => [c.unit, c.name, c.group, c.location, c.positions[0].min]),
+    [['教慈區', '烹飪：統班', '烹飪團第八組', '彌勒山', 15], ['教全區', '交通：統班', '志工團第 12 組', '彌勒山', null], ['教真區', '交通：統班', '', '彌勒山', null]]);
+  const cook = res.children[0];
+  // 組長填名單
+  env.ok(await env.post({ action: 'adminRosterSave', token: sup, id: cook.id, date: '2026-10-24', key: cook.positions[0].id, names: '測試甲、測試乙' }));
+  let cal = env.ok(await env.get('action=getCalendar&from=2026-10-01&to=2026-10-31'));
+  assert.deepEqual(cal.events.find((e) => e.name === '統班').links.map((l) => l.unit), ['教真區', '教慈區', '教全區']);
+  // 改名稱、日期，拿掉教真區
+  const saved = parent.duties;
+  res = env.ok(await env.post({ action: 'adminSave', token: sup, event: Object.assign({}, parent, { name: '統班（第二次）', start: '2026-10-25', end: '2026-10-25', duties: saved,
+    assign: [{ id: cook.id, unit: '教慈區', dutyId: 'D-a', group: '烹飪團第八組' }, { unit: '教全區', dutyId: 'D-b', group: '志工團第 12 組' }] }) }));
+  assert.deepEqual(res.children.map((c) => [c.unit, c.name, c.start]), [['教慈區', '烹飪：統班（第二次）', '2026-10-25'], ['教全區', '交通：統班（第二次）', '2026-10-25']]);
+  assert.equal(res.children[0].id, cook.id);
+  assert.deepEqual(res.children[0].roster, { '2026-10-24': { [cook.positions[0].id]: ['測試甲', '測試乙'] } }, '名單留著');
+  let list = env.ok(await env.post({ action: 'adminList', token: sup })).events;
+  assert.equal(list.filter((e) => e.parentId === parent.id).length, 2);
+  // 刪分壇活動：分工一起刪
+  const del = env.ok(await env.post({ action: 'adminDelete', token: sup, id: parent.id }));
+  assert.equal(del.deleted, 3);
+  list = env.ok(await env.post({ action: 'adminList', token: sup })).events;
+  assert.equal(list.length, 0);
+});
+
+test('以前用名稱掛上的各區勤務：帶進分工後改用 parentId，名單從「_」搬過來；drop 的刪掉', async () => {
+  const env = setup();
+  const sup = env.ok(await env.post({ action: 'adminLogin', password: 'test-pass' })).token;
+  const parent = env.ok(await env.post({ action: 'adminSave', token: sup, event: E({ unit: '分壇', category: '道務', name: '統班' }) })).event;
+  const a = env.ok(await env.post({ action: 'adminSave', token: sup, event: E({ unit: '教慈區', name: '烹飪：統班' }) })).event;
+  const b = env.ok(await env.post({ action: 'adminSave', token: sup, event: E({ unit: '教理區', name: '烹飪：統班' }) })).event;
+  env.ok(await env.post({ action: 'adminRosterSave', token: sup, id: a.id, date: '2026-10-24', key: '_', names: '測試甲' }));
+  const res = env.ok(await env.post({ action: 'adminSave', token: sup, event: Object.assign({}, parent, {
+    duties: [{ id: 'D-x', work: '烹飪', picks: ['u:教慈區'] }], assign: [{ id: a.id, unit: '教慈區', dutyId: 'D-x' }], drop: [b.id] }) }));
+  const c = res.children[0];
+  assert.equal(c.id, a.id);
+  assert.equal(c.parentId, parent.id);
+  assert.deepEqual(c.roster, { '2026-10-24': { [c.positions[0].id]: ['測試甲'] } });
+  const list = env.ok(await env.post({ action: 'adminList', token: sup })).events;
+  assert.ok(!list.some((e) => e.id === b.id), 'drop 的刪掉');
+});
+
 test('行事曆的項目：掛在分壇活動下、沒對應的同名同日合成一張、區活動與測試區不出現', () => {
   const L = (o) => Object.assign({ source: 'local', category: '勤務', start: '2026-10-24', end: '2026-10-24', startTime: '', location: '', note: '', link: '', kind: '分壇分配', positions: [], roster: {} }, o);
   const items = buildCalendar([
