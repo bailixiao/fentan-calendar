@@ -735,6 +735,13 @@ select.input { appearance: auto; }
 
 .top-btns { grid-template-columns: 1fr; }
 .card-links { font-size: .88rem; color: var(--ink-2); }
+.linked-fold > summary { display: grid; gap: 2px; padding: 10px 14px; margin-bottom: 10px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); cursor: pointer; list-style: none; }
+.linked-fold > summary::-webkit-details-marker { display: none; }
+.linked-fold > summary::after { content: "按這裡打開 ▾"; color: var(--accent); font-weight: 700; font-size: .9rem; }
+.linked-fold[open] > summary::after { content: "收起來 ▴"; }
+.fold-title { font-family: var(--serif); font-size: 1.15rem; font-weight: 700; }
+.fold-title .h2-sub { margin-left: 8px; }
+.fold-sub { color: var(--ink-2); overflow-wrap: anywhere; }
 .linked-item { margin: 0 0 10px; padding: 10px 14px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); }
 .linked-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; }
 .linked-item .roster { margin-top: 8px; }

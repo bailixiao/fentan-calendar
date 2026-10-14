@@ -47,7 +47,7 @@
       </dl>
       ${ev.note ? `<section class="detail-section"><h2>說明</h2><p class="detail-desc">${Fmt.esc(ev.note).replace(/\n/g, '<br>')}</p></section>` : ''}
       ${ev.signup ? attendHtml(ev) : ''}
-      ${hasLinks ? `<section class="detail-section"><h2>各區名單<span class="h2-sub">${Fmt.esc(Fmt.shortDate(date))}</span></h2>${linkedHtml(ev, date)}</section>` : ''}
+      ${hasLinks ? foldHtml(ev, date) : ''}
       ${ev.link ? `<div class="detail-actions"><a class="btn btn-block btn-go" href="${Fmt.esc(ev.link)}" target="_blank" rel="noopener">打開相關連結 ↗</a></div>` : ''}
       <a class="btn btn-block back-btn" href="#/">‹ 回行事曆</a>`;
   }
@@ -98,6 +98,20 @@
         ${ev.note ? `<p class="sheet-note">${Fmt.esc(ev.note).replace(/\n/g, '<br>')}</p>` : ''}
         <div class="sheet-actions"><button type="button" class="btn" data-act="copy-sheet">📋 複製文字（貼到 LINE）</button><span class="muted" data-copied></span></div>
         <p class="hint">${closed ? '名單已截止。' : '各區組長按自己那一行的「報名」填出席、陪班、交通名單。'}</p>
+      </section>`;
+  }
+
+  /** 已分配給各區的名單：先收起來（一行寫派了幾區、填了幾人），要看、要填再打開 */
+  function foldHtml(ev, date) {
+    const links = linksOn(ev, date);
+    const units = [...new Set(links.map((l) => l.unit))];
+    const filled = links.reduce((n, l) => n + ((l.counts || {})[date] || 0), 0);
+    return `<section class="detail-section">
+        <details class="linked-fold">
+          <summary><span class="fold-title">已分配區的名單<span class="h2-sub">${Fmt.esc(Fmt.shortDate(date))}</span></span>
+            <span class="fold-sub">${units.length} 區・已填 ${filled} 人：${Fmt.esc(units.join('、'))}</span></summary>
+          ${linkedHtml(ev, date)}
+        </details>
       </section>`;
   }
 

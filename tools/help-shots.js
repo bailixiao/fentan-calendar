@@ -78,7 +78,8 @@ const SHOTS = [
   { name: 'linked', hash: '#/', js: `
       document.querySelector('[data-view=recent]').click(); await __wait(800);
       const a = [...document.querySelectorAll('#week a.ev-card')].find((x) => x.querySelector('.card-title').textContent === '統班');
-      location.hash = a.getAttribute('href'); await __wait(1500);`,
+      location.hash = a.getAttribute('href'); await __wait(1500);
+      const fold = document.querySelector('.linked-fold'); if (fold) fold.open = true; await __wait(300);`,
     clip: `return __box('#view-event .detail-head', '#view-event .linked-item:last-of-type');` },
   { name: 'roster-fill', hash: '#/admin', js: `
       if (document.querySelector('.admin-login')) {
