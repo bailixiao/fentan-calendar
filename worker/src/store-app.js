@@ -171,10 +171,15 @@ export function createStoreApp(store, opts) {
     const id = body.event && typeof body.event.id === 'string' ? body.event.id : '';
     // 新增時可以一次派給好幾區（units）：每區各一筆，同一個批號（規格第 9-2 節）
     const units = !id && body.event && Array.isArray(body.event.units) ? [...new Set(body.event.units.map(String))] : null;
+    // 勾志工團、烹飪團的組派的：每區的組別不一樣（groupOf：區 → 「志工團第 3、4 組」）
+    const groupOf = (u) => {
+      const map = body.event && body.event.groupOf && typeof body.event.groupOf === 'object' ? body.event.groupOf : {};
+      return typeof map[u] === 'string' ? map[u] : (body.event.group || '');
+    };
     if (units && units.length > 1) {
       if (units.length > 17) throw new AppError('BAD_REQUEST', '單位太多了');
       const positions = cleanEvent(Object.assign({}, body.event, { unit: units[0] }), newPositionId).positions; // 各區用同一組了愿項目代號
-      const cleaned = units.map((u) => Object.assign(cleanEvent(Object.assign({}, body.event, { unit: u, positions })), { positions }));
+      const cleaned = units.map((u) => Object.assign(cleanEvent(Object.assign({}, body.event, { unit: u, positions, group: groupOf(u) })), { positions }));
       const stamp = taipeiStamp(now());
       const batch = 'B-' + stamp.replace(/\D/g, '').slice(0, 14) + '-' + randomHex(2);
       const list = cleaned.map((c) => Object.assign({ id: newEventId(now(), randomHex(4)) }, c, { batch, createdAt: stamp, updatedAt: stamp }));
@@ -182,7 +187,7 @@ export function createStoreApp(store, opts) {
       store.addLog({ time: stamp, action: '新增', unit: units.join('、'), name: list[0].name, start: list[0].start, end: list[0].end, batch });
       return { event: list[0], events: list };
     }
-    const clean = cleanEvent(units && units.length === 1 ? Object.assign({}, body.event, { unit: units[0] }) : body.event, newPositionId);
+    const clean = cleanEvent(units && units.length === 1 ? Object.assign({}, body.event, { unit: units[0], group: groupOf(units[0]) }) : body.event, newPositionId);
     const stamp = taipeiStamp(now());
     let saved;
     if (id) {

@@ -4,7 +4,7 @@ import { SITE } from './site.js';
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 const MAX_DAYS = 60; // 一筆活動最長幾天
-const LIMITS = { name: 60, location: 60, dress: 60, note: 1000, link: 500 };
+const LIMITS = { name: 60, group: 60, location: 60, dress: 60, note: 1000, link: 500 };
 
 export class AppError extends Error {
   constructor(code, message) {
@@ -92,6 +92,7 @@ export function cleanEvent(input, newId) {
     end: str(input.end) || str(input.start),
     startTime: str(input.startTime),
     endTime: str(input.endTime),
+    group: str(input.group),
     location: str(input.location),
     dress: str(input.dress),
     deadline: str(input.deadline),
@@ -100,6 +101,7 @@ export function cleanEvent(input, newId) {
   };
   const errs = [];
   // 單位是某一區：分壇分配（預設）或區活動；了愿項目選填
+  if (ev.unit === SITE.fentan) ev.group = '';
   if (ev.unit && ev.unit !== SITE.fentan) {
     ev.kind = str(input.kind) || KINDS[0];
     if (KINDS.indexOf(ev.kind) === -1) errs.push('種類要是「分壇分配」或「區活動」');
@@ -122,7 +124,7 @@ export function cleanEvent(input, newId) {
   if (ev.deadline && !isDate(ev.deadline)) errs.push('截止日期格式不對');
   else if (ev.deadline && isDate(ev.end) && ev.deadline > ev.end) errs.push('截止日期不能晚於活動的最後一天');
   Object.keys(LIMITS).forEach((k) => {
-    if (ev[k].length > LIMITS[k]) errs.push(`${({ name: '活動名稱', location: '地點', dress: '服裝', note: '說明', link: '相關連結' })[k]}最多 ${LIMITS[k]} 字`);
+    if (ev[k].length > LIMITS[k]) errs.push(`${({ name: '活動名稱', group: '組別', location: '地點', dress: '服裝', note: '說明', link: '相關連結' })[k]}最多 ${LIMITS[k]} 字`);
   });
   if (errs.length) throw new AppError('BAD_REQUEST', errs.join('；'));
   return ev;
@@ -138,7 +140,7 @@ export function publicEvent(ev) {
   return {
     id: ev.id, source: 'local', unit: ev.unit, category: ev.category, name: ev.name,
     start: ev.start, end: ev.end, startTime: ev.startTime || '', endTime: ev.endTime || '',
-    location: ev.location || '', dress: ev.dress || '', deadline: ev.deadline || '', note: ev.note || '', link: ev.link || '',
+    group: ev.group || '', location: ev.location || '', dress: ev.dress || '', deadline: ev.deadline || '', note: ev.note || '', link: ev.link || '',
     kind: ev.unit === SITE.fentan ? '' : ev.kind || KINDS[0],
     positions: Array.isArray(ev.positions) ? ev.positions : [],
     roster: ev.roster && typeof ev.roster === 'object' ? ev.roster : {} // 各區組長填的名單：日期 → 了愿項目（沒有項目用 _）→ 名字（規格第 9-4 節）
@@ -263,7 +265,7 @@ function sortLinks(list) {
 
 /** 掛著的各區勤務：附了愿項目與各區組長填的名單（規格第 9-4 節）。截止日期：勤務自己沒填就用掛的分壇活動的 */
 function linkOf(e, parent) {
-  return { id: e.id, unit: e.unit, name: e.name, start: e.start, end: e.end, dress: e.dress || '',
+  return { id: e.id, unit: e.unit, name: e.name, group: e.group || '', start: e.start, end: e.end, dress: e.dress || '',
     deadline: e.deadline || (parent && parent.deadline) || '', positions: e.positions || [], roster: e.roster || {} };
 }
 

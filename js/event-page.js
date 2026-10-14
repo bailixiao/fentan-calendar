@@ -66,7 +66,7 @@
       return `
         <article class="linked-item">
           <div class="linked-head">
-            <span><span class="unit-tag">${Fmt.esc(l.unit)}</span> <strong>${Fmt.esc(l.name)}</strong></span>
+            <span><span class="unit-tag">${Fmt.esc(l.unit)}</span> <strong>${Fmt.esc(l.name)}</strong>${l.group ? ` <small class="muted">${Fmt.esc(l.group)}</small>` : ''}</span>
             ${total ? `<span class="badge badge-ok">已填 ${total} 人</span>` : '<span class="badge badge-full">還沒填名單</span>'}
           </div>
           ${l.dress || (l.deadline && l.deadline !== ev.deadline) ? `<p class="card-meta">${Fmt.esc([l.dress ? '服裝：' + l.dress : '', l.deadline && l.deadline !== ev.deadline ? Fmt.shortDate(l.deadline) + ' 截止' : ''].filter(Boolean).join('・'))}</p>` : ''}

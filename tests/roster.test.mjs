@@ -125,6 +125,18 @@ test('截止日期、服裝：勤務沒填就用分壇活動的；過了截止�
   env.ok(await env.post({ action: 'adminRosterSave', token: sup2, id: cook.id, date: '2026-10-24', key: '_', names: '測試乙' }));
 });
 
+test('勾志工團、烹飪團的組派的：每區記自己的組別，掛在分壇活動下也看得到', async () => {
+  const env = setup();
+  const sup = env.ok(await env.post({ action: 'adminLogin', password: 'test-pass' })).token;
+  env.ok(await env.post({ action: 'adminSave', token: sup, event: E({ unit: '分壇', category: '道務', name: '敦化班', group: '不該存' }) }));
+  const res = env.ok(await env.post({ action: 'adminSave', token: sup, event: E({ units: ['教美區', '教理區'], name: '志工團：敦化班', groupOf: { 教美區: '志工團第 3、13 組', 教理區: '志工團第 13 組' } }) }));
+  assert.deepEqual(res.events.map((e) => [e.unit, e.group]), [['教美區', '志工團第 3、13 組'], ['教理區', '志工團第 13 組']]);
+  const cal = env.ok(await env.get('action=getCalendar&from=2026-10-01&to=2026-10-31'));
+  const item = cal.events.find((e) => e.name === '敦化班');
+  assert.equal(item.group, '');
+  assert.deepEqual(item.links.map((l) => l.group), ['志工團第 3、13 組', '志工團第 13 組']);
+});
+
 test('行事曆的項目：掛在分壇活動下、沒對應的同名同日合成一張、區活動與測試區不出現', () => {
   const L = (o) => Object.assign({ source: 'local', category: '勤務', start: '2026-10-24', end: '2026-10-24', startTime: '', location: '', note: '', link: '', kind: '分壇分配', positions: [], roster: {} }, o);
   const items = buildCalendar([

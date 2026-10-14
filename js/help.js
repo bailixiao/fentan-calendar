@@ -59,7 +59,7 @@
     { cat: '管理者', q: '怎麼新增、修改活動？', img: 'admin-list.png', a: `
       <ol class="help-steps">
         <li><span class="help-num">1</span><span>按最下面的「管理者」，輸入管理密碼登入。</span></li>
-        <li><span class="help-num">2</span><span>按「＋ 新增活動」，選單位、類別，填名稱、日期、時間、地點。</span></li>
+        <li><span class="help-num">2</span><span>按「＋ 新增活動」，選單位、類別，填名稱、日期、時間、地點。派給區的勤務，也可以直接勾志工團、烹飪團的組（組後面有寫是哪幾區，會自動勾好）。</span></li>
         <li><span class="help-num">3</span><span>要改就按那一筆的「修改」；同樣的活動換日期，用「另存新的」最快。</span></li>
       </ol>
       <p>每一筆新增、修改、刪除都會記在「操作紀錄」。</p>` },

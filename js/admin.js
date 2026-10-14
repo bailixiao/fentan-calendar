@@ -212,6 +212,7 @@
     const evHtml = (ev) => `
       <article class="roster-card${ev.id === focusId ? ' is-focus' : ''}" id="roster-${Fmt.esc(ev.id)}">
         <h3>${Fmt.esc(ev.name)}</h3>
+        ${ev.group ? `<p class="card-meta">${Fmt.esc(ev.group)}</p>` : ''}
         <p class="card-meta">${Fmt.esc([ev.start === ev.end ? Fmt.shortDate(ev.start) : `${Fmt.shortDate(ev.start)} – ${Fmt.shortDate(ev.end)}`, Fmt.timeRange(ev), ev.location].filter(Boolean).join('・'))}</p>
         ${ev.dress ? `<p class="card-meta">服裝：${Fmt.esc(ev.dress)}</p>` : ''}
         ${ev.deadline ? `<p class="deadline${ev.closed ? ' is-closed' : ''}">${ev.closed ? `已經過了截止日期（${md(ev.deadline)}）${isRegion ? '，要改名單請找分壇' : '，組長不能再改，總管理者還可以改'}` : `名單 ${Fmt.esc(Fmt.shortDate(ev.deadline))} 截止`}</p>` : ''}
@@ -446,8 +447,12 @@
       <div class="unit-checks"${isRegion ? '' : ' hidden'}>
         <div class="check-all"><button type="button" class="btn btn-small" data-act="check-all">全選（${window.SITE.units.length} 區）</button><button type="button" class="btn btn-small" data-act="check-none">全不選</button></div>
         <div class="push-units">${regions.map((u) => `<label class="check-chip"><input type="checkbox" name="units" value="${Fmt.esc(u)}"${u === ev.unit ? ' checked' : ''}> ${Fmt.esc(u)}</label>`).join('')}</div>
+        ${(window.SITE.teams || []).map((t, ti) => `
+          <p class="team-title">${Fmt.esc(t.name)}<span class="muted">（勾一組會自動勾那幾區）</span></p>
+          <div class="push-units team-units">${t.groups.map((g, gi) => `<label class="check-chip"><input type="checkbox" name="team" data-t="${ti}" data-g="${gi}"> <span class="team-no">${Fmt.esc(t.pre + g[0] + t.post)}</span><small>（${Fmt.esc(g[1].join('、') + (g[2] ? '・' + g[2] : ''))}）</small></label>`).join('')}</div>`).join('')}
       </div>`
-      : `<label class="form-row"><span>單位</span><select class="input" name="unit">${opt(editableUnits(), ev.unit)}</select></label>`;
+      : `<label class="form-row"><span>單位</span><select class="input" name="unit">${opt(editableUnits(), ev.unit)}</select></label>
+        <label class="form-row group-row"><span>組別（可以不填，例：志工團第 3 組）</span><input class="input" name="group" maxlength="60" value="${Fmt.esc(ev.group || '')}"></label>`;
     view.innerHTML = tabs(mode === 'new' ? 'new' : '') + `
       <form class="admin-form" novalidate>
         <h2 class="admin-sub">${title}</h2>
@@ -494,11 +499,23 @@
     const sync = () => {
       const region = multi ? form.querySelector('[name="scope"]:checked').value === 'regions' : form.unit.value !== fentan;
       if (multi) form.querySelector('.unit-checks').hidden = !region;
+      else form.querySelector('.group-row').hidden = !region;
       form.querySelector('.kind-note').hidden = !region;
       form.querySelector('.pos-block').hidden = !region || ev.kind === '區活動';
     };
     sync();
     form.addEventListener('change', sync);
+    // 勾組＝勾那幾區；取消組＝取消那幾區（別的組還要的區留著）
+    const teamUnits = (c) => window.SITE.teams[c.dataset.t].groups[c.dataset.g][1];
+    form.addEventListener('change', (e) => {
+      const c = e.target.closest('[name="team"]');
+      if (!c) return;
+      const still = new Set([...form.querySelectorAll('[name="team"]:checked')].flatMap(teamUnits));
+      teamUnits(c).forEach((u) => {
+        const box = form.querySelector(`[name="units"][value="${u}"]`);
+        if (box) box.checked = c.checked || still.has(u);
+      });
+    });
     form.addEventListener('click', (e) => {
       const b = e.target.closest('button');
       if (!b) return;
@@ -510,19 +527,32 @@
       // 全選＝16 區（測試區不算）；全不選＝全部取消
       if (b.dataset.act === 'check-all' || b.dataset.act === 'check-none') {
         form.querySelectorAll('[name="units"]').forEach((c) => { c.checked = b.dataset.act === 'check-all'; });
+        if (b.dataset.act === 'check-none') form.querySelectorAll('[name="team"]').forEach((c) => { c.checked = false; });
       }
     });
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const f = new FormData(form);
       const data = {};
-      ['category', 'name', 'start', 'end', 'startTime', 'endTime', 'location', 'dress', 'deadline', 'note', 'link'].forEach((k) => { data[k] = String(f.get(k) || '').trim(); });
+      ['category', 'name', 'group', 'start', 'end', 'startTime', 'endTime', 'location', 'dress', 'deadline', 'note', 'link'].forEach((k) => { data[k] = String(f.get(k) || '').trim(); });
       if (!data.end) data.end = data.start;
       const errs = [];
       if (multi) {
         if (f.get('scope') === 'regions') {
           data.units = f.getAll('units').map(String);
           if (!data.units.length) errs.push('請勾選要派給哪幾區');
+          // 每區的組別：勾了哪幾組（例：教美區 → 志工團第 3、4、13 組）
+          const picked = {};
+          form.querySelectorAll('[name="team"]:checked').forEach((c) => {
+            const t = window.SITE.teams[c.dataset.t];
+            const g = t.groups[c.dataset.g];
+            g[1].forEach((u) => { ((picked[u] ||= {})[c.dataset.t] ||= []).push(g[0]); });
+          });
+          data.groupOf = {};
+          data.units.forEach((u) => {
+            const byTeam = picked[u] || {};
+            data.groupOf[u] = Object.keys(byTeam).map((ti) => { const t = window.SITE.teams[ti]; return t.name + t.pre + byTeam[ti].join('、') + t.post; }).join('、');
+          });
           data.unit = data.units[0] || '';
         } else data.unit = fentan;
       } else data.unit = String(f.get('unit'));

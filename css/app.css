@@ -750,6 +750,13 @@ select.input { appearance: auto; }
 .roster-fill-actions { display: flex; align-items: center; gap: 10px; }
 .linked-item .roster small { margin-left: 4px; }
 .linked-item .fill-btn { margin-top: 8px; font-weight: 700; }
+.team-title { margin: 14px 0 6px; font-weight: 700; }
+.team-title .muted { font-weight: 400; font-size: .9rem; }
+.push-units.team-units { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+.team-units .check-chip { white-space: normal; padding-block: 6px; }
+.team-units .check-chip input { flex-shrink: 0; }
+.team-no { white-space: nowrap; }
+.team-units .check-chip small { color: var(--muted); margin-left: 2px; }
 .check-all { display: flex; gap: 8px; margin: 4px 0 8px; }
 .deadline { margin: 6px 0 0; font-weight: 700; color: var(--ink-2); }
 .deadline.is-closed { color: var(--accent); }
