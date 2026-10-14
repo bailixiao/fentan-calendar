@@ -215,7 +215,8 @@
     const attendHtml = (a) => {
       const lock = a.closed && isRegion ? ' readonly' : '';
       const ta = (key, label, list) => `<label class="form-row"><span><strong>${label}</strong>：<b data-count="${key}">${list.length}</b> 人</span>
-        <textarea class="input textarea" name="${key}" rows="2"${lock} placeholder="名字之間空一格或用、隔開">${Fmt.esc(list.join('、'))}</textarea></label>`;
+        <textarea class="input textarea" name="${key}" rows="2"${lock} placeholder="名字之間空一格或用、隔開">${Fmt.esc(list.join('、'))}</textarea></label>
+        <div class="name-preview" data-preview="${key}" aria-live="polite"></div>`;
       return `
       <article class="roster-card attend-card${a.id === focusId ? ' is-focus' : ''}" id="roster-${Fmt.esc(a.id)}">
         <h3>${Fmt.esc(a.name)}<span class="attend-tag">出席名單・${Fmt.esc(a.row)}</span></h3>
@@ -267,27 +268,47 @@
     const sel = view.querySelector('[data-f="unit"]');
     if (sel) sel.addEventListener('change', () => { location.hash = '#/admin/roster/' + encodeURIComponent(sel.value); });
     // 邊打邊預覽：拆好的名字一個一個顯示（和存檔後一樣），太長、超過人數當場提醒
-    const preview = (f) => {
-      const names = Fmt.splitNames(f.names.value);
-      const max = Number(f.dataset.max) || 0;
+    const preview = (f) => { f.querySelector('[data-preview]').innerHTML = previewHtml(f.names.value, Number(f.dataset.max) || 0); };
+    // 名字預覽（填名單、出席名單都用）：拆好的名字一個一個顯示，太長紅色、超過 4 個字黃色
+    function previewHtml(text, max) {
+      const names = Fmt.splitNames(text);
       const long = names.filter((n) => n.length > 20);
       const odd = names.filter((n) => n.length > 4 && n.length <= 20);
-      f.querySelector('[data-preview]').innerHTML = names.length ? `
+      return names.length ? `
         <span class="name-count">會存成 ${names.length} 人：</span>${names.map((n) => `<span class="name-chip${n.length > 20 ? ' is-bad' : n.length > 4 ? ' is-odd' : ''}">${Fmt.esc(n)}</span>`).join('')}
         ${long.length ? '<p class="form-error">標紅色的太長了（最多 20 字），是不是兩個名字中間忘了空格或「、」？</p>' : ''}
         ${odd.length ? `<p class="name-warn">${odd.map((n) => `「${Fmt.esc(n)}」`).join('')}超過 4 個字，確定是一個人的名字嗎？如果是兩個人，中間加空格或「、」。</p>` : ''}
         ${max && names.length > max ? `<p class="form-error">超過最多 ${max} 人</p>` : ''}` : '';
-    };
+    }
     view.querySelectorAll('.roster-fill').forEach((f) => {
       preview(f);
       f.names.addEventListener('input', () => { preview(f); f.querySelector('[data-msg]').textContent = '還沒儲存'; });
     });
     view.querySelectorAll('.attend-fill').forEach((f) => {
-      const count = () => ['names', 'escort'].forEach((k) => { f.querySelector(`[data-count="${k}"]`).textContent = Fmt.splitNames(f[k].value).length; });
+      let count = () => ['names', 'escort'].forEach((k) => {
+        f.querySelector(`[data-count="${k}"]`).textContent = Fmt.splitNames(f[k].value).length;
+        f.querySelector(`[data-preview="${k}"]`).innerHTML = previewHtml(f[k].value, 0);
+      });
+      // 同一個人寫在出席、陪班兩邊
+      const both = () => {
+        const names = Fmt.splitNames(f.names.value);
+        const dup = Fmt.splitNames(f.escort.value).filter((n) => names.indexOf(n) !== -1);
+        if (dup.length) f.querySelector('[data-preview="escort"]').insertAdjacentHTML('beforeend', `<p class="name-warn">${dup.map((n) => `「${Fmt.esc(n)}」`).join('')}出席、陪班兩邊都有，會算兩次，請只留一邊。</p>`);
+      };
+      const count0 = count;
+      count = () => { count0(); both(); };
+      count();
       f.addEventListener('input', () => { count(); f.querySelector('[data-msg]').textContent = '還沒儲存'; });
       f.addEventListener('submit', async (e) => {
         e.preventDefault();
         const msg = f.querySelector('[data-msg]');
+        const odd = Fmt.splitNames(f.names.value + '、' + f.escort.value).filter((n) => n.length > 4 && n.length <= 20);
+        if (odd.length && !window.confirm(`${odd.map((n) => `「${n}」`).join('')}超過 4 個字，確定是一個人的名字嗎？
+
+按「確定」照這樣儲存；按「取消」回去把名字拆開（中間加空格或「、」）。`)) {
+          f.names.focus();
+          return;
+        }
         msg.textContent = '儲存中⋯';
         try {
           const res = await Api.admin('adminAttendSave', { id: f.dataset.id, row: f.dataset.row, names: f.names.value, escort: f.escort.value, note: f.note.value });
