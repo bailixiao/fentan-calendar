@@ -443,12 +443,12 @@
       </div>`;
     const unitBlock = multi ? `
       <label class="radio-row"><input type="radio" name="scope" value="fentan"${isRegion ? '' : ' checked'}> 分壇自己的活動</label>
-      <label class="radio-row"><input type="radio" name="scope" value="regions"${isRegion ? ' checked' : ''}> 派給區（可以勾好幾區，每區各一筆）</label>
+      <label class="radio-row"><input type="radio" name="scope" value="regions"${isRegion ? ' checked' : ''}> 派給區（可以選好幾區，每區各一筆）</label>
       <div class="unit-checks"${isRegion ? '' : ' hidden'}>
         <div class="check-all"><button type="button" class="btn btn-small" data-act="check-all">全選（${window.SITE.units.length} 區）</button><button type="button" class="btn btn-small" data-act="check-none">全不選</button></div>
         <div class="push-units">${regions.map((u) => `<label class="check-chip"><input type="checkbox" name="units" value="${Fmt.esc(u)}"${u === ev.unit ? ' checked' : ''}> ${Fmt.esc(u)}</label>`).join('')}</div>
         ${(window.SITE.teams || []).map((t, ti) => `
-          <p class="team-title">${Fmt.esc(t.name)}<span class="muted">（勾一組會自動勾那幾區）</span></p>
+          <p class="team-title">${Fmt.esc(t.name)}<span class="muted">（按一組，會自動選好那幾區）</span></p>
           <div class="push-units team-units">${t.groups.map((g, gi) => `<label class="check-chip"><input type="checkbox" name="team" data-t="${ti}" data-g="${gi}"> <span class="team-no">${Fmt.esc(t.pre + g[0] + t.post)}</span><small>（${Fmt.esc(g[1].join('、') + (g[2] ? '・' + g[2] : ''))}）</small></label>`).join('')}</div>`).join('')}
       </div>`
       : `<label class="form-row"><span>單位</span><select class="input" name="unit">${opt(editableUnits(), ev.unit)}</select></label>
