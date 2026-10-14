@@ -454,6 +454,14 @@
 
   // ---------- 新增／修改／另存新的 ----------
 
+  /** 時間只給整點、半點（05:00～23:30）；原本存的時間不是整點半點的，也列出來 */
+  function timeOptions(value) {
+    const list = [];
+    for (let h = 5; h <= 23; h++) ['00', '30'].forEach((m) => list.push(String(h).padStart(2, '0') + ':' + m));
+    if (value && list.indexOf(value) === -1) { list.push(value); list.sort(); }
+    return '<option value="">不填</option>' + list.map((t) => `<option${t === value ? ' selected' : ''}>${t}</option>`).join('');
+  }
+
   const newDutyId = () => 'D-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   // 以前用名稱掛在分壇活動下的各區勤務（規則同 worker/src/logic.js 的 coreName、parentKey）
   const coreName = (n) => String(n || '').replace(/（[^）]*）|\([^)]*\)/g, '').replace(/第\s*\d+\s*次\s*$/, '').replace(/[\s:：・、,，]/g, '');
@@ -579,8 +587,8 @@
             <label><span>結束日期（一天的留空）</span><input class="input" type="date" name="end" value="${ev.end && ev.end !== ev.start ? Fmt.esc(ev.end) : ''}"></label>
           </div>
           <div class="form-row-pair">
-            <label><span>開始時間（可以不填）</span><input class="input" type="time" name="startTime" value="${Fmt.esc(ev.startTime || '')}"></label>
-            <label><span>結束時間（可以不填）</span><input class="input" type="time" name="endTime" value="${Fmt.esc(ev.endTime || '')}"></label>
+            <label><span>開始時間（可以不填）</span><select class="input" name="startTime">${timeOptions(ev.startTime)}</select></label>
+            <label><span>結束時間（可以不填）</span><select class="input" name="endTime">${timeOptions(ev.endTime)}</select></label>
           </div>
           <label class="form-row"><span>地點</span><input class="input" name="location" maxlength="60" value="${Fmt.esc(ev.location || '')}"></label>
           <div class="form-row-pair">
