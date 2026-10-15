@@ -237,6 +237,7 @@
     const head = `
       <div class="page-head"><h1>📋 區的報名</h1><p>選自己的區，看接下來每一堂報了誰。報錯了在這裡取消。</p></div>
       <label class="form-row"><span>哪一區</span><select class="input" data-f="unit">${Fmt.unitOptions(unit, '請選擇區')}</select></label>
+      <label class="form-row unit-search" hidden><span>找名字</span><input class="input" type="search" data-f="q" placeholder="打名字的一部分，例：小明"></label>
       <div id="unit-msg" class="notice notice-success" hidden></div>
       <div id="unit-list"></div>
       <a class="btn btn-block back-btn" href="#/">‹ 回首頁</a>`;
@@ -251,15 +252,26 @@
     const canCancel = (r, s) => (who && (who.role === 'super' || (who.role === 'region' && who.account === unit))) || (r.mine && !s.closed);
     box.innerHTML = data.items.length ? data.items.map(({ course: c, session: s, signups }) => `
       <section class="unit-item">
-        <a class="unit-item-head" href="#/s/${encodeURIComponent(s.id)}">
+        <div class="unit-item-head">
           <span class="course-tag c-${Fmt.esc(c.color)}">${Fmt.esc(c.name)}</span>
           <strong>${Fmt.esc(Fmt.shortDate(s.date))}${s.startTime ? ' ' + Fmt.esc(s.startTime) : ''}</strong>
           <span class="muted">${s.no ? `第 ${s.no} 堂` : ''}${s.topic ? '・' + Fmt.esc(s.topic) : ''}</span>
-        </a>
+        </div>
         <p class="unit-item-meta">${unit} ${signups.length} 人・${s.closed ? '報名已截止' : `${Fmt.esc(Fmt.md(s.deadline))} 截止`}</p>
         <div class="name-list">${signups.map((r) => `<span class="person${r.mine ? ' is-mine' : ''}">${Fmt.esc(r.name)}${canCancel(r, s) ? `<button type="button" class="person-x" data-cancel="${Fmt.esc(r.id)}" data-admin="${r.mine && !s.closed ? '' : '1'}" aria-label="取消${Fmt.esc(r.name)}的報名">取消</button>` : ''}</span>`).join('')}</div>
       </section>`).join('') + '<p class="hint">標顏色的是用這支手機報的，截止前可以自己取消。換了手機、或已經截止，請找組長幫忙。</p>'
       : `<p class="panel-empty">${Fmt.esc(unit)}在接下來的課還沒有人報名</p>`;
+    // 找名字：只留有這個名字的那幾堂
+    const search = view.querySelector('.unit-search');
+    search.hidden = !data.items.length;
+    search.querySelector('input').addEventListener('input', (e) => {
+      const q = e.target.value.trim();
+      box.querySelectorAll('.unit-item').forEach((it) => {
+        let any = false;
+        it.querySelectorAll('.person').forEach((p) => { const hit = !q || p.firstChild.textContent.indexOf(q) !== -1; p.hidden = !hit; any = any || hit; });
+        it.hidden = !any;
+      });
+    });
     box.querySelectorAll('[data-cancel]').forEach((b) => b.addEventListener('click', async () => {
       const name = b.parentNode.firstChild.textContent;
       if (!window.confirm(`確定要取消「${name}」的報名嗎？`)) return;
