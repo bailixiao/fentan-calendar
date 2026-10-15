@@ -257,15 +257,39 @@
     return `
       <label class="form-row"><span>多久一次</span><select class="input" name="every">
         <option value="biweek"${every === 'month' ? '' : ' selected'}>兩個禮拜一次（隔週）</option>
-        <option value="month"${every === 'month' ? ' selected' : ''}>一個月一次</option></select></label>
+        <option value="month"${every === 'month' ? ' selected' : ''}>一個月一次</option>
+        <option value="pick">日期不固定（自己一天一天選）</option></select></label>
       <div class="form-row month-rule"${every === 'month' ? '' : ' hidden'}><span>每個月的</span>
         <span class="month-pick"><select class="input" name="nth">${[1, 2, 3, 4, 5].map((k) => `<option value="${k}"${k === n ? ' selected' : ''}>${k === 5 ? '最後一個' : `第 ${k} 個`}</option>`).join('')}</select>
         <select class="input" name="weekday">${WD.map((w, k) => `<option value="${k}"${k === wd ? ' selected' : ''}>星期${w}</option>`).join('')}</select></span></div>
-      <div class="form-row-pair">
+      <div class="form-row-pair range-rows">
         <label><span>從哪一天開始</span><input class="input" type="date" name="first" value="${first}"></label>
         <label><span>排到哪一天</span><input class="input" type="date" name="until" value="${Fmt.addDays(first, 364)}"></label>
       </div>
+      <div class="pick-dates" hidden>
+        <span class="form-label">要上課的日期</span>
+        <div class="pick-list">${pickRow(first)}</div>
+        <button type="button" class="btn btn-small" data-act="add-date">＋ 再加一個日期</button>
+      </div>
       <p class="hint plan-rule" aria-live="polite"></p>`;
+  }
+
+  const pickRow = (v) => `<div class="pick-row"><input class="input" type="date" data-pick-date value="${Fmt.esc(v || '')}" aria-label="上課日期"><button type="button" class="btn btn-small btn-quiet-danger" data-act="rm-date" aria-label="拿掉這個日期">✕</button></div>`;
+
+  /** 自己選日期：＋ 再加一個（預設最後一個日期的四週後）、✕ 拿掉 */
+  function bindRepeat(form) {
+    form.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-act="add-date"], [data-act="rm-date"]');
+      if (!b) return;
+      const list = form.querySelector('.pick-list');
+      if (b.dataset.act === 'add-date') {
+        const dates = [...list.querySelectorAll('[data-pick-date]')].map((x) => x.value).filter(Boolean).sort();
+        list.insertAdjacentHTML('beforeend', pickRow(dates.length ? Fmt.addDays(dates[dates.length - 1], 28) : form.first.value));
+        list.lastElementChild.querySelector('input').focus();
+      } else if (list.children.length > 1) b.closest('.pick-row').remove();
+      else b.closest('.pick-row').querySelector('input').value = '';
+      form.dispatchEvent(new Event('change'));
+    });
   }
 
   /** 照欄位算出會排哪幾天，寫在下面讓管理者確認；回傳要送給伺服器的 plan */
@@ -274,11 +298,15 @@
     const n = Number(form.nth.value);
     const wd = Number(form.weekday.value);
     form.querySelector('.month-rule').hidden = every !== 'month';
-    const dates = every === 'month' ? monthlyDates(form.first.value, form.until.value, n, wd) : biweeklyDates(form.first.value, form.until.value);
-    const rule = every === 'month' ? `每個月${n === 5 ? '最後一個' : `第 ${n} 個`}星期${WD[wd]}` : (form.first.value ? `每兩個禮拜的星期${Fmt.weekday(form.first.value)}` : '');
+    form.querySelector('.range-rows').hidden = every === 'pick';
+    form.querySelector('.pick-dates').hidden = every !== 'pick';
+    const picked = [...new Set([...form.querySelectorAll('[data-pick-date]')].map((x) => x.value).filter(Boolean))].sort();
+    const dates = every === 'pick' ? picked : every === 'month' ? monthlyDates(form.first.value, form.until.value, n, wd) : biweeklyDates(form.first.value, form.until.value);
+    const rule = every === 'pick' ? '自己選的日期' : every === 'month' ? `每個月${n === 5 ? '最後一個' : `第 ${n} 個`}星期${WD[wd]}` : (form.first.value ? `每兩個禮拜的星期${Fmt.weekday(form.first.value)}` : '');
     form.querySelector('.plan-rule').textContent = dates.length
       ? `${rule}，共 ${dates.length} 堂：${dates.slice(0, 4).map(Fmt.shortDate).join('、')}${dates.length > 4 ? '⋯' : ''}`
-      : '這段日期排不出課，請檢查日期';
+      : every === 'pick' ? '請選要上課的日期' : '這段日期排不出課，請檢查日期';
+    if (every === 'pick') return { plan: { dates }, count: dates.length };
     return { plan: { first: form.first.value, until: form.until.value, every, nth: n, weekday: wd }, count: dates.length };
   }
 
@@ -313,7 +341,7 @@
         ${id ? '' : `
         <fieldset class="form-block">
           <legend>排課</legend>
-          <label class="radio-row"><input type="radio" name="plan" value="year" checked> 照固定的時間排（隔週、或一個月一次），一次排一整年</label>
+          <label class="radio-row"><input type="radio" name="plan" value="year" checked> 排很多堂（隔週、一個月一次、或自己選日期）</label>
           <div class="plan-year">${repeatFields(first, 'biweek')}</div>
           <label class="radio-row"><input type="radio" name="plan" value="one"> 只有一堂（臨時活動）</label>
           <label class="form-row plan-one" hidden><span>日期</span><input class="input" type="date" name="date" value="${first}"></label>
@@ -337,6 +365,7 @@
       };
       form.addEventListener('change', sync);
       form.addEventListener('input', sync);
+      bindRepeat(form);
       sync();
     }
     form.addEventListener('submit', async (e) => {
@@ -353,8 +382,7 @@
       let plan = null;
       if (!id && form.plan.value === 'year') {
         const r = readRepeat(form);
-        if (!form.first.value) errs.push('請選從哪一天開始');
-        else if (!r.count) errs.push('這段日期排不出課，請檢查日期');
+        if (!r.count) errs.push(form.every.value === 'pick' ? '請選要上課的日期' : '這段日期排不出課，請檢查日期');
         plan = r.plan;
       }
       if (!id && form.plan.value === 'one') {
@@ -425,6 +453,7 @@
     const form = view.querySelector('.make-form');
     form.addEventListener('change', () => readRepeat(form));
     form.addEventListener('input', () => readRepeat(form));
+    bindRepeat(form);
     readRepeat(form);
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -432,7 +461,7 @@
       busy(true, '排課中⋯');
       try {
         const r = readRepeat(form);
-        if (!r.count) throw new Error('這段日期排不出課，請檢查日期');
+        if (!r.count) throw new Error(form.every.value === 'pick' ? '請選要上課的日期' : '這段日期排不出課，請檢查日期');
         const res = await Api.admin('adminSessionsMake', { courseId: c.id, plan: r.plan });
         busy(false);
         HomePage.refresh();

@@ -844,6 +844,12 @@ select.input { appearance: auto; }
 .c-teal { --c: #1f7a78; --c-soft: #dcefee; }
 
 .month-pick { display: flex; gap: 8px; }
+.pick-dates { display: grid; gap: 6px; }
+.pick-dates .form-label { font-size: .9rem; color: var(--ink-2); }
+.pick-list { display: grid; gap: 6px; }
+.pick-row { display: flex; gap: 6px; align-items: center; }
+.pick-row .input { flex: 1; min-width: 0; }
+.pick-dates [data-act="add-date"] { justify-self: start; }
 .month-pick .input { flex: 1; min-width: 0; }
 .plan-year, .make-form .form-block { display: grid; gap: 8px; }
 .board { display: grid; gap: 14px; margin: 4px 0 18px; }
