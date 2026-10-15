@@ -1,6 +1,6 @@
 // Worker 前門：接 HTTP 請求（規格第 11 節）。
 //   - getBoard：主畫面（開放的班、每一堂、報名人數），記憶體快取 15 秒，人再多也不用每次問資料庫。報名、改課之後馬上失效。
-//   - getSession：那一堂的頁面（含報名名單），不快取。
+//   - getSession：那一堂的頁面（含報名名單）；getUnit：區的報名（那一區接下來每一堂報了誰）。都不快取。
 //   - 其他 POST：轉給 Durable Object。
 import { AppError, taipeiDate } from './logic.js';
 
@@ -71,6 +71,7 @@ export function createFront(opts) {
         const action = url.searchParams.get('action') || '';
         if (action === 'getBoard') return json({ ok: true, data: await getBoard(url.searchParams.get('fresh') === '1') });
         if (action === 'getSession') return json(await opts.callStore({ action: 'getSession', id: url.searchParams.get('id') || '', token: url.searchParams.get('t') || '' }));
+        if (action === 'getUnit') return json(await opts.callStore({ action: 'getUnit', unit: url.searchParams.get('unit') || '', token: url.searchParams.get('t') || '' }));
         if (action === 'ping') return json({ ok: true, data: { today: taipeiDate(now()) } });
         if (action === 'loginAccounts') return json(await opts.callStore({ action: 'loginAccounts' }));
         // 手機提醒：公鑰（不會變，記在這個 Worker）、手機收到推播後來問要顯示什麼

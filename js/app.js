@@ -14,6 +14,13 @@
 
   function route() {
     const hash = location.hash || '#/';
+    const unit = hash.match(/^#\/u\/?([^?/]*)/);
+    if (unit) {
+      showView('page');
+      window.scrollTo(0, 0);
+      HomePage.showUnit(document.getElementById('view-page'), decodeURIComponent(unit[1] || ''));
+      return;
+    }
     const page = hash.match(/^#\/(c|s)\/([^?/]+)/);
     if (page) {
       showView('page');

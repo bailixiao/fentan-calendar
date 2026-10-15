@@ -120,11 +120,10 @@
     data.signups.forEach((r) => { (by[r.unit] ||= []).push(r); });
     const units = window.SITE.units.filter((u) => by[u]);
     if (!units.length) return '<p class="panel-empty">還沒有人報名，歡迎第一個報名 🙂</p>';
-    const canCancel = (r) => (who && (who.role === 'super' || (who.role === 'region' && who.account === r.unit))) || (r.mine && !data.session.closed);
     return units.map((u) => `
       <div class="unit-group">
         <p class="unit-group-head"><span class="unit-tag">${Fmt.esc(u)}</span><span class="muted">${by[u].length} 人</span></p>
-        <div class="name-list">${by[u].map((r) => `<span class="person${r.mine ? ' is-mine' : ''}">${Fmt.esc(r.name)}${r.walkin ? '<small>現場</small>' : ''}${canCancel(r) ? `<button type="button" class="person-x" data-cancel="${Fmt.esc(r.id)}" data-admin="${r.mine && !data.session.closed ? '' : '1'}" aria-label="取消${Fmt.esc(r.name)}的報名">取消</button>` : ''}</span>`).join('')}</div>
+        <div class="name-list">${by[u].map((r) => `<span class="person${r.mine ? ' is-mine' : ''}">${Fmt.esc(r.name)}${r.walkin ? '<small>現場</small>' : ''}</span>`).join('')}</div>
       </div>`).join('');
   }
 
@@ -176,7 +175,8 @@
       <section class="detail-section">
         <h2 class="section-title">報名名單<span class="h2-sub">共 ${data.signups.length} 人</span></h2>
         ${listHtml(data, who)}
-        ${data.signups.some((r) => r.mine) && !s.closed ? '<p class="hint">標顏色的是用這支手機報的，報錯了可以按「取消」。截止後要取消請找組長。</p>' : ''}
+        <p class="hint">標顏色的是用這支手機報的。要取消報名，請到首頁的「📋 區的報名」選自己的區。</p>
+        <a class="btn btn-block" href="#/u/${encodeURIComponent(readUnit() || '')}">📋 區的報名（查看、取消）</a>
       </section>
       ${who && (who.role === 'super' || who.role === 'roll') ? `<a class="btn btn-block" href="#/admin/roll/${encodeURIComponent(s.id)}">✅ 點名</a>` : ''}
       <a class="btn btn-block back-btn" href="#/">‹ 回首頁</a>`;
@@ -224,7 +224,43 @@
         }
       });
     }
-    view.querySelectorAll('[data-cancel]').forEach((b) => b.addEventListener('click', async () => {
+    msgBox.hidden = true;
+  }
+
+  // ---------- 區的報名：選區，看這一區接下來每一堂報了誰；取消在這裡 ----------
+
+  async function showUnit(view, unit) {
+    const t = ++token;
+    const who = Api.isAdmin() ? Api.who() : null;
+    if (!unit && who && who.role === 'region') unit = who.account;
+    if (!unit) unit = readUnit();
+    const head = `
+      <div class="page-head"><h1>📋 區的報名</h1><p>選自己的區，看接下來每一堂報了誰。報錯了在這裡取消。</p></div>
+      <label class="form-row"><span>哪一區</span><select class="input" data-f="unit">${Fmt.unitOptions(unit, '請選擇區')}</select></label>
+      <div id="unit-msg" class="notice notice-success" hidden></div>
+      <div id="unit-list"></div>
+      <a class="btn btn-block back-btn" href="#/">‹ 回首頁</a>`;
+    view.innerHTML = head;
+    view.querySelector('[data-f="unit"]').addEventListener('change', (e) => { location.hash = '#/u/' + encodeURIComponent(e.target.value); });
+    const box = view.querySelector('#unit-list');
+    if (!unit) { box.innerHTML = '<p class="panel-empty">請先選區</p>'; return; }
+    box.innerHTML = '<p class="panel-empty">載入中⋯</p>';
+    let data;
+    try { data = await Api.getUnit(unit); } catch (err) { if (t === token) box.innerHTML = errorHtml(err); return; }
+    if (t !== token) return;
+    const canCancel = (r, s) => (who && (who.role === 'super' || (who.role === 'region' && who.account === unit))) || (r.mine && !s.closed);
+    box.innerHTML = data.items.length ? data.items.map(({ course: c, session: s, signups }) => `
+      <section class="unit-item">
+        <a class="unit-item-head" href="#/s/${encodeURIComponent(s.id)}">
+          <span class="course-tag c-${Fmt.esc(c.color)}">${Fmt.esc(c.name)}</span>
+          <strong>${Fmt.esc(Fmt.shortDate(s.date))}${s.startTime ? ' ' + Fmt.esc(s.startTime) : ''}</strong>
+          <span class="muted">${s.no ? `第 ${s.no} 堂` : ''}${s.topic ? '・' + Fmt.esc(s.topic) : ''}</span>
+        </a>
+        <p class="unit-item-meta">${unit} ${signups.length} 人・${s.closed ? '報名已截止' : `${Fmt.esc(Fmt.md(s.deadline))} 截止`}</p>
+        <div class="name-list">${signups.map((r) => `<span class="person${r.mine ? ' is-mine' : ''}">${Fmt.esc(r.name)}${canCancel(r, s) ? `<button type="button" class="person-x" data-cancel="${Fmt.esc(r.id)}" data-admin="${r.mine && !s.closed ? '' : '1'}" aria-label="取消${Fmt.esc(r.name)}的報名">取消</button>` : ''}</span>`).join('')}</div>
+      </section>`).join('') + '<p class="hint">標顏色的是用這支手機報的，截止前可以自己取消。換了手機、或已經截止，請找組長幫忙。</p>'
+      : `<p class="panel-empty">${Fmt.esc(unit)}在接下來的課還沒有人報名</p>`;
+    box.querySelectorAll('[data-cancel]').forEach((b) => b.addEventListener('click', async () => {
       const name = b.parentNode.firstChild.textContent;
       if (!window.confirm(`確定要取消「${name}」的報名嗎？`)) return;
       busy(true, '取消中⋯');
@@ -232,17 +268,20 @@
         if (b.dataset.admin) await Api.admin('adminCancelSignup', { id: b.dataset.cancel });
         else await Api.cancelSignup(b.dataset.cancel);
         busy(false);
-        await done(`已取消「${name}」的報名`);
+        board = null;
+        await showUnit(view, unit);
+        const msg = view.querySelector('#unit-msg');
+        msg.innerHTML = `<p>已取消「${Fmt.esc(name)}」的報名</p>`;
+        msg.hidden = false;
       } catch (x) {
         busy(false);
         window.alert(x.message);
       }
     }));
-    msgBox.hidden = true;
   }
 
   window.HomePage = {
-    showHome, showCourse, showSession,
+    showHome, showCourse, showSession, showUnit,
     refresh: () => { board = null; }
   };
 })();

@@ -179,6 +179,29 @@ export function createEduApp(store, opts) {
   }
 
   /**
+   * 區的報名（規格第 6 節）：這一區在接下來每一堂（開放的班、還沒上完的）報了誰；大家都看得到。
+   * mine＝這支手機報的（可以自己取消）。只列有報名的那幾堂。
+   */
+  async function unitPage(body) {
+    const unit = str(body.unit);
+    if (!isUnit(unit)) throw new AppError('BAD_REQUEST', '請選擇區');
+    const token = typeof body.token === 'string' && body.token.length >= 16 ? body.token : '';
+    const hash = token ? await opts.sha256(token) : '';
+    const all = store.allDocs('signup');
+    const out = [];
+    sortCourses(courses().filter((c) => c.open !== false)).forEach((c) => {
+      const mine = all.filter((r) => r.courseId === c.id);
+      sessionViews(c.id, mine).forEach((v) => {
+        if (v.date < today() || v.cancelled) return;
+        const list = mine.filter((r) => r.sessionId === v.id && r.unit === unit);
+        if (list.length) out.push({ course: courseView(c), session: v, signups: publicSignups(list, hash) });
+      });
+    });
+    out.sort((a, b) => a.session.date.localeCompare(b.session.date) || (a.session.startTime || '').localeCompare(b.session.startTime || ''));
+    return { today: today(), unit, items: out };
+  }
+
+  /**
    * 報名：names（可以好幾個，空格或、隔開）＋區。by：'self'（家人，token 存雜湊，可以自己取消）、'region'（組長）、'admin'、'walkin'（點名時現場加）。
    * 同一堂、同區、同名的跳過。家人報名要在截止前、沒停課、沒額滿；組長、管理者不受截止限制（停課、額滿還是不行）。
    */
@@ -394,7 +417,7 @@ export function createEduApp(store, opts) {
 
   return {
     actions: {
-      getBoard: board, getSession: sessionPage, signup, cancelSignup,
+      getBoard: board, getSession: sessionPage, getUnit: unitPage, signup, cancelSignup,
       adminSignup, adminCancelSignup, adminRoll, adminRollSet, adminRollAdd, adminAttendance,
       adminCourses, adminCourseSave, adminCourseDelete, adminSessionSave, adminSessionDelete, adminSessionsMake
     },

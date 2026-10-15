@@ -143,6 +143,7 @@
     // 主畫面（開放的班、每一堂、人數）；那一堂（含報名名單，mine＝這支手機報的）
     getBoard: (fresh) => get('getBoard', fresh ? { fresh: '1' } : {}),
     getSession: (id) => get('getSession', { id, t: deviceToken() }),
+    getUnit: (unit) => get('getUnit', { unit, t: deviceToken() }),
     signup: (sessionId, names, unit) => post({ action: 'signup', sessionId, names, unit, token: deviceToken() }),
     cancelSignup: (id) => post({ action: 'cancelSignup', id, token: deviceToken() }),
     loginAccounts: () => get('loginAccounts', {}),

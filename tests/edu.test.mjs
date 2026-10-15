@@ -84,6 +84,17 @@ test('家人自己報名：好幾個人一起報、重複跳過、名單公開�
   assert.equal(env.ok(await env.get('action=getBoard')).courses[0].sessions[0].count, 3);
 });
 
+test('區的報名：選一區看接下來每一堂報了誰，這支手機報的標 mine', async () => {
+  const env = setup();
+  const { sessions } = await ready(env);
+  env.ok(await env.post({ action: 'signup', sessionId: sessions[0].id, names: '王小明', unit: '教善區', token: TOKEN_A }));
+  env.ok(await env.post({ action: 'signup', sessionId: sessions[1].id, names: '測試甲', unit: '教善區', token: TOKEN_B }));
+  env.ok(await env.post({ action: 'signup', sessionId: sessions[1].id, names: '測試乙', unit: '教真區', token: TOKEN_B }));
+  const page = env.ok(await env.get('action=getUnit&unit=' + encodeURIComponent('教善區') + '&t=' + TOKEN_A));
+  assert.deepEqual(page.items.map((x) => [x.session.date, x.signups.map((r) => [r.name, r.mine])]), [['2026-10-17', [['王小明', true]]], ['2026-10-31', [['測試甲', false]]]]);
+  assert.match(env.err(await env.get('action=getUnit&unit=x')), /請選擇區/);
+});
+
 test('截止、停課、額滿：家人不能報、不能自己取消；組長、總管理者截止後還可以', async () => {
   const env = setup();
   const { sup, sessions } = await ready(env);

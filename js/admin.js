@@ -148,7 +148,8 @@
     const rows = b.courses.flatMap((c) => c.sessions.filter((s) => s.date >= b.today && !s.cancelled).slice(0, 4).map((s) => ({ c, s })))
       .sort((x, y) => x.s.date.localeCompare(y.s.date));
     view.innerHTML = tabs('') + `
-      <p class="hint">點一堂課，在「報名」可以幫${Fmt.esc(w.account)}的人報名（截止後也可以）；名單上${Fmt.esc(w.account)}的人旁邊有「取消」。</p>
+      <p class="hint">點一堂課，在「報名」可以幫${Fmt.esc(w.account)}的人報名（截止後也可以）；要取消，到首頁「📋 區的報名」，${Fmt.esc(w.account)}的人旁邊都有「取消」。</p>
+      <a class="btn btn-block" href="#/u/${encodeURIComponent(w.account)}">📋 ${Fmt.esc(w.account)}的報名（查看、取消）</a>
       <div class="session-list">${rows.length ? rows.map(({ c, s }) => `
         <a class="session-row" href="#/s/${encodeURIComponent(s.id)}">
           <span class="session-date">${Fmt.esc(Fmt.shortDate(s.date))}<small>第 ${s.no} 堂</small></span>
