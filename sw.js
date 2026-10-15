@@ -42,7 +42,8 @@ async function networkFirst(req) {
   const cache = await caches.open(CACHE);
   const key = new URL('./', self.location).href; // 網頁本身只存一份（不分 #／?）
   try {
-    const res = await withTimeout(fetch(req), 3000);
+    // no-cache：每次都問伺服器有沒有新版（GitHub Pages 會讓瀏覽器暫存網頁 10 分鐘，不這樣更新後要等很久）
+    const res = await withTimeout(fetch(req.url, { cache: 'no-cache', credentials: 'same-origin' }), 3000);
     if (res.ok) cache.put(key, res.clone());
     return res;
   } catch (e) {
