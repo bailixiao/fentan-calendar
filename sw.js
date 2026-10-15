@@ -8,7 +8,7 @@
 // 同一個網域（bailixiao.github.io）底下有好幾個網站（教全區、書槑子⋯），手機裡的快取是共用的：
 // 快取名稱帶上這個網站的路徑，清舊快取時只清自己的，不會清掉別的網站的。
 const PREFIX = 'fentan-calendar:' + new URL('./', self.location).pathname + ':';
-const CACHE = PREFIX + 'v2';
+const CACHE = PREFIX + 'v3'; // 2026-10-15 改版：清掉第一版的檔案
 const CDN_HOSTS = ['cdn.jsdelivr.net', 'fonts.googleapis.com', 'fonts.gstatic.com'];
 
 self.addEventListener('install', () => self.skipWaiting());

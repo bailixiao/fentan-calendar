@@ -1,4 +1,4 @@
-// 手機提醒的測試：記憶體版的資料存放、假的推播服務與教全區，不連網。
+// 手機提醒的測試：記憶體版的資料存放、假的推播服務，不連網。
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createFront } from '../worker/src/front.js';
@@ -16,10 +16,6 @@ function setup(o = {}) {
   const alarms = [];
   let pushStatus = o.pushStatus || (() => 201);
   const fakeFetch = async (url, init) => {
-    if (url.startsWith('https://duty-calendar-api')) {
-      const date = new URL(url).searchParams.get('from');
-      return { ok: true, json: async () => ({ ok: true, data: { contact: '測試甲', duties: [{ id: 'D-9', name: '教全區打掃', category: '勤務', mode: '報名型', start: date, end: date, startTime: '08:00', location: '區中心', groupLeader: '測試乙' }] } }) };
-    }
     pushed.push({ url, headers: init.headers });
     return { status: pushStatus(url) };
   };
@@ -30,7 +26,9 @@ function setup(o = {}) {
   const get = async (q) => (await front.handle(new Request('http://x/?' + q))).json();
   const login = async () => (await post({ action: 'adminLogin', password: 'test-pass' })).data.token;
   const runAlarms = async () => { let n = 0; while (alarms.length && n < 50) { alarms.length = 0; await app.alarm(); n++; } return n; };
-  return { clock, store, app, pushed, alarms, post, get, login, runAlarms, setPushStatus: (f) => { pushStatus = f; } };
+  // 加一個只有一堂的班（每日提醒用）
+  const addClass = async (token, name, date, startTime, location) => (await post({ action: 'adminCourseSave', token, course: { name, startTime, location }, plan: { dates: [date] } })).data;
+  return { clock, store, app, pushed, alarms, post, get, login, runAlarms, addClass, setPushStatus: (f) => { pushStatus = f; } };
 }
 
 test('推播網址：只接受各家推播服務', () => {
@@ -65,7 +63,7 @@ test('每日提醒內容：選區＝那一區＋分壇；選分壇＝只有分�
   assert.deepEqual(eventsForUnit(ev, '分壇').map((e) => e.name), ['分壇法會']);
   assert.deepEqual(eventsForUnit(ev, '教真區').map((e) => e.name), ['分壇法會', '研究班']);
   const c = dailyContent(eventsForUnit(ev, '教真區'), 'tomorrow', '2026-10-14');
-  assert.equal(c.title, '🙏 明天的活動（10/14 三）');
+  assert.equal(c.title, '🙏 明天的課（10/14 三）');
   assert.equal(c.body, '09:00 分壇法會（分壇佛堂）\n19:30 研究班');
   assert.equal(dailyContent([], 'today', '2026-10-14'), null);
   const many = Array.from({ length: 6 }, (_, i) => ({ unit: '分壇', name: '活動' + i, start: '2026-10-14', end: '2026-10-14' }));
@@ -100,7 +98,7 @@ test('測試通知：送空的推播（VAPID 標頭）、手機拿得到內容�
   const id = await pushIdOf(EP(1));
   r = await env.get('action=pushSummary&id=' + id);
   assert.equal(r.data.message.title, '🔔 測試通知');
-  assert.match(r.data.message.body, /教善區＋分壇/);
+  assert.match(r.data.message.body, /教育組的課/);
   r = await env.get('action=pushSummary&id=' + id);
   assert.equal(r.data.message, null); // 拿過就沒了
   r = await env.post({ action: 'pushTest', endpoint: EP(1) });
@@ -112,36 +110,37 @@ test('測試通知：送空的推播（VAPID 標頭）、手機拿得到內容�
   assert.equal(env.store.getSub(id), null);
 });
 
-test('每日提醒：依單位送、沒有活動的單位不送、教全區包含教全區的活動、分批送完', async () => {
+test('每日提醒：明天有課就每支都送（不分區）、分批送完', async () => {
   const env = setup();
   const token = await env.login();
-  await env.post({ action: 'adminSave', token, event: { unit: '分壇', category: '道務', name: '分壇法會', start: '2026-10-14', startTime: '09:00', location: '分壇佛堂' } });
-  await env.post({ action: 'adminSave', token, event: { unit: '教真區', category: '道務', name: '教真區研究班', start: '2026-10-14', startTime: '19:30' } });
+  await env.addClass(token, '高大班', '2026-10-14', '09:00', '分壇佛堂');
+  await env.addClass(token, '青少年班', '2026-10-14', '19:30', '');
   // 95 支選教真區、3 支選教全區、2 支選分壇、1 支選教善區
   for (let i = 0; i < 95; i++) await env.post({ action: 'pushSubscribe', endpoint: EP(i), unit: '教真區' });
   for (let i = 95; i < 98; i++) await env.post({ action: 'pushSubscribe', endpoint: EP(i), unit: '教全區' });
   for (let i = 98; i < 100; i++) await env.post({ action: 'pushSubscribe', endpoint: EP(i), unit: '分壇' });
   await env.post({ action: 'pushSubscribe', endpoint: EP(100), unit: '教善區' });
   const r = await env.app.enqueueDaily('tomorrow');
-  assert.equal(r.units, 17); // 分壇有活動 → 每個單位都有東西
+  assert.equal(r.units, 17); // 教育組的課每個單位都提醒
   const rounds = await env.runAlarms();
   assert.equal(env.pushed.length, 101);
   assert.ok(rounds >= Math.ceil(101 / BATCH), '分批送：' + rounds);
   const summary = async (n) => (await env.get('action=pushSummary&id=' + await pushIdOf(EP(n)))).data.message;
   const zhen = await summary(0);
-  assert.equal(zhen.title, '🙏 明天的活動（10/14 三）');
-  assert.equal(zhen.body, '09:00 分壇法會（分壇佛堂）\n19:30 教真區研究班');
-  assert.equal((await summary(98)).body, '09:00 分壇法會（分壇佛堂）');
-  const jq = await summary(95);
-  assert.match(jq.body, /教全區打掃（區中心）/);
-  assert.ok(!JSON.stringify(jq).includes('測試乙'));
+  assert.equal(zhen.title, '🙏 明天的課（10/14 三）');
+  assert.equal(zhen.body, '09:00 高大班（分壇佛堂）\n19:30 青少年班');
+  assert.equal((await summary(98)).body, zhen.body);
 });
 
-test('每日提醒：那天完全沒有活動就不送', async () => {
+test('每日提醒：那天沒有課（或停課）就不送', async () => {
   const env = setup();
+  const token = await env.login();
+  await env.addClass(token, '高大班', '2026-10-13', '09:00', '');
+  const s = env.store.allDocs('session')[0];
+  await env.post({ action: 'adminSessionSave', token, session: Object.assign({}, s, { cancelled: true }) });
   await env.post({ action: 'pushSubscribe', endpoint: EP(1), unit: '教善區' });
   const r = await env.app.enqueueDaily('today');
-  assert.equal(r.units, 1); // 只有教全區（假的教全區每天都有）
+  assert.equal(r.units, 0);
   await env.runAlarms();
   assert.equal(env.pushed.length, 0);
 });
@@ -208,7 +207,7 @@ test('每日提醒的時間：台北 07:00（今天）、20:00（明天）', asy
 test('每日提醒不用 cron：第一個請求就排好 alarm，時間到自己送、再排下一次；遲到太久不送', async () => {
   const env = setup(); // 台北 19:00
   const token = await env.login();
-  await env.post({ action: 'adminSave', token, event: { unit: '分壇', category: '道務', name: '分壇法會', start: '2026-10-14', startTime: '09:00' } });
+  await env.addClass(token, '高大班', '2026-10-14', '09:00', '');
   await env.post({ action: 'pushSubscribe', endpoint: EP(1), unit: '教真區' });
   const at20 = Date.parse('2026-10-13T20:00:00+08:00');
   assert.ok(env.alarms.includes(at20), '排好今晚 8 點');
@@ -217,14 +216,14 @@ test('每日提醒不用 cron：第一個請求就排好 alarm，時間到自己
   await env.app.alarm(); // 20:00 響：排明天的提醒並送出
   await env.runAlarms();
   assert.equal(env.pushed.length, 1);
-  assert.equal((await env.get('action=pushSummary&id=' + await pushIdOf(EP(1)))).data.message.title, '🙏 明天的活動（10/14 三）');
-  // 下一次是明天早上 7 點：那天分壇有法會 → 今天的提醒
+  assert.equal((await env.get('action=pushSummary&id=' + await pushIdOf(EP(1)))).data.message.title, '🙏 明天的課（10/14 三）');
+  // 下一次是明天早上 7 點：那天有課 → 今天的提醒
   env.pushed.length = 0;
   env.clock.add(Date.parse('2026-10-14T07:00:00+08:00') - env.clock.now());
   await env.app.alarm();
   await env.runAlarms();
   assert.equal(env.pushed.length, 1);
-  assert.equal((await env.get('action=pushSummary&id=' + await pushIdOf(EP(1)))).data.message.title, '🙏 今天的活動（10/14 三）');
+  assert.equal((await env.get('action=pushSummary&id=' + await pushIdOf(EP(1)))).data.message.title, '🙏 今天的課（10/14 三）');
   // 遲到 3 小時才響：不送，直接排下一次
   env.pushed.length = 0;
   env.clock.add(Date.parse('2026-10-14T23:00:00+08:00') - env.clock.now());

@@ -71,56 +71,25 @@ const BOX = `
 
 // 每一張：{ name, hash, js（打開後在頁面裡做的事）, clip（回傳截圖範圍） }
 const SHOTS = [
-  { name: 'month', hash: '#/', js: `
-      document.querySelector('[data-view=month]').click(); await __wait(500);`,
-    tap: () => '[...document.querySelectorAll(".fc-daygrid-day")].find((c) => c.querySelector(".cell-dots") && c.dataset.date >= "' + new Date(Date.now() + 8 * 3600e3 + 11 * 86400e3).toISOString().slice(0, 10) + '")',
-    clip: `return __box('#fc', '#day-panel');` },
-  { name: 'linked', hash: '#/', js: `
-      document.querySelector('[data-view=recent]').click(); await __wait(800);
-      const a = [...document.querySelectorAll('#week a.ev-card')].find((x) => x.querySelector('.card-title').textContent === '統班');
-      location.hash = a.getAttribute('href'); await __wait(1500);
-      const fold = document.querySelector('.linked-fold'); if (fold) fold.open = true; await __wait(300);`,
-    clip: `return __box('#view-event .detail-head', '#view-event .linked-item:last-of-type');` },
-  { name: 'roster-fill', hash: '#/admin', js: `
+  { name: 'signup', hash: '#/', js: `
+      document.querySelector('.next-foot .btn').click(); await __wait(1500);
+      const f = document.querySelector('.signup-form');
+      f.names.value = '王小明 測試甲'; f.names.dispatchEvent(new Event('input')); await __wait(200);`,
+    clip: `return __box('#view-page .signup-form', '#view-page .unit-group:last-of-type');` },
+  { name: 'roll', hash: '#/admin', js: `
       if (document.querySelector('.admin-login')) {
-        const f = document.querySelector('.admin-login'); f.account.value = '教慈區'; f.password.value = 'ci-pass'; f.requestSubmit(); await __wait(1200);
-      }`,
-    clip: `return __box('#view-admin .admin-head', '#view-admin .roster-card');` },
-  { name: 'admin-list', hash: '#/admin', js: `
-      if (!document.querySelector('.admin-row')) {
-        const f = document.querySelector('.admin-login'); f.password.value = 'test-pass'; f.requestSubmit(); await __wait(800);
-      }`,
-    clip: `return __box('.admin-head', '.admin-row:nth-child(2)');` },
-  { name: 'admin-import', hash: '#/admin/import', js: `
-      if (document.querySelector('.admin-login')) {
-        const f = document.querySelector('.admin-login'); f.password.value = 'test-pass'; f.requestSubmit(); await __wait(800);
-        location.hash = '#/admin/import'; await __wait(800);
+        const f = document.querySelector('.admin-login'); f.account.value = '點名'; f.password.value = 'roll-pass'; f.requestSubmit(); await __wait(1200);
       }
-      // 示範用的匯入檔：兩筆可以匯入、一筆有錯
-      const events = [
-        { unit: '教美區', category: '教育', name: '教美區親子讀經（範例）', start: '2026-11-07', startTime: '09:30', endTime: '11:00', location: '教美區中心' },
-        { unit: '教孝區', category: '道務', name: '教孝區研究班（範例）', start: '2026-11-10', startTime: '19:30', location: '教孝區佛堂' },
-        { unit: '教全區', kind: '區活動', category: '勤務', name: '教全區打掃（範例）', start: '2026-11-12' }
-      ];
-      const input = document.querySelector('.import-pick input');
-      const dt = new DataTransfer();
-      dt.items.add(new File([JSON.stringify({ title: '十一月各區活動（範例）', events })], 'example.json', { type: 'application/json' }));
-      input.files = dt.files; input.dispatchEvent(new Event('change')); await __wait(800);`,
-    clip: `await __wait(800); scrollTo({ top: 0, behavior: 'instant' }); return __box('.admin-sub', '.imp-list');` },
+      const a = [...document.querySelectorAll('#view-admin .session-row')].find((x) => /人報名/.test(x.textContent) && !/(^|\\D)0 人報名/.test(x.textContent) && !x.classList.contains('is-past'));
+      location.hash = a.getAttribute('href'); await __wait(1500);
+      const rows = document.querySelectorAll('.roll-row');
+      rows[0].querySelector('[data-status="到"]').click(); await __wait(300);
+      rows[1].querySelector('[data-status="請假"]').click(); await __wait(300);`,
+    clip: `return __box('#view-admin .page-head', '#view-admin .roll-group:nth-of-type(4)');` },
   { name: 'push', hash: '#/', js: `
       window.__pushDemo = true;
       document.getElementById('push-open').click(); await __wait(500);`,
-    clip: `return __box('#push-open', '#push-panel');` },
-  { name: 'admin-push', hash: '#/admin/push', js: `
-      if (document.querySelector('.admin-login')) {
-        const f = document.querySelector('.admin-login'); f.password.value = 'test-pass'; f.requestSubmit(); await __wait(800);
-        location.hash = '#/admin/push'; await __wait(900);
-      }
-      const f = document.querySelector('#view-admin form');
-      f.title.value = '統班改地點（範例）'; f.body.value = '這週日的統班改在彌勒山，時間不變 🙏';
-      f.querySelector('[name=who][value=pick]').checked = true; f.dispatchEvent(new Event('change'));
-      f.querySelector('[name=unit][value="教善區"]').checked = true; await __wait(300);`,
-    clip: `return __box('.admin-sub', '#view-admin form button[type=submit]');` }
+    clip: `return __box('#push-open', '#push-panel');` }
 ];
 
 async function main() {

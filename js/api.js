@@ -1,9 +1,22 @@
-// 呼叫分壇的 Worker API。
+// 呼叫 Worker API（規格第 11 節）。
 // 讀取用 GET（逾時就同時再問一次，誰先回來用誰）；寫入用 POST，內容是 JSON 但標頭設 text/plain，避免 CORS 預檢。
 (function () {
   'use strict';
 
   const TOKEN_KEY = 'fentan-calendar:admin';
+  const DEVICE_KEY = 'fentan-calendar:device';
+
+  /** 這支手機的隨機碼：自己報名的可以自己取消（伺服器只存雜湊）。存不了（無痕模式）就每次開新的 */
+  let device = '';
+  function deviceToken() {
+    if (device) return device;
+    try { device = localStorage.getItem(DEVICE_KEY) || ''; } catch (e) { /* 忽略 */ }
+    if (!device) {
+      device = 'd-' + [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, '0')).join('');
+      try { localStorage.setItem(DEVICE_KEY, device); } catch (e) { /* 忽略 */ }
+    }
+    return device;
+  }
 
   class ApiError extends Error {
     constructor(code, message) {
@@ -88,7 +101,7 @@
     }
   }
 
-  /** 記住通行碼與登入的是誰（總管理者，或某一區的組長帳號） */
+  /** 記住通行碼與登入的是誰（總管理者、點名，或某一區的組長） */
   function saveToken(token, expiresInSec, account, role) {
     try {
       if (token) localStorage.setItem(TOKEN_KEY, JSON.stringify({ token, account: account || '總管理者', role: role || 'super', expires: Date.now() + expiresInSec * 1000 - 60000 }));
@@ -127,9 +140,11 @@
 
   window.Api = {
     ApiError,
-    getEvents: (from, to, fresh) => get('getEvents', Object.assign({ from, to }, fresh ? { fresh: '1' } : {})),
-    // 分壇行事曆畫面：只有分壇的活動，各區的勤務掛在下面（規格第 9-3 節）
-    getCalendar: (from, to, fresh, test) => get('getCalendar', Object.assign({ from, to }, fresh ? { fresh: '1' } : {}, test ? { test: '1' } : {})),
+    // 主畫面（開放的班、每一堂、人數）；那一堂（含報名名單，mine＝這支手機報的）
+    getBoard: (fresh) => get('getBoard', fresh ? { fresh: '1' } : {}),
+    getSession: (id) => get('getSession', { id, t: deviceToken() }),
+    signup: (sessionId, names, unit) => post({ action: 'signup', sessionId, names, unit, token: deviceToken() }),
+    cancelSignup: (id) => post({ action: 'cancelSignup', id, token: deviceToken() }),
     loginAccounts: () => get('loginAccounts', {}),
     // 手機提醒：只送推播網址和單位，沒有名字
     pushKey: () => get('pushKey', {}),
@@ -140,6 +155,6 @@
     adminLogin,
     adminLogout,
     isAdmin: () => !!adminToken,
-    who: () => adminWho // { account, role: 'super' | 'region' }
+    who: () => adminWho // { account, role: 'super' | 'roll' | 'region' }
   };
 })();

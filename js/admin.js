@@ -1,21 +1,11 @@
-// 管理後台（#/admin）：登入（總管理者或各區組長）、活動列表、新增／修改／另存新的／刪除、批次匯入（可整批刪除）、
-// 發通知（手機提醒）、帳號（各區組長）、填名單、操作紀錄、下載備份。組長帳號只看得到填名單。權限由伺服器檢查。
+// 管理後台（#/admin，規格第 7～9 節）：登入（總管理者、點名、各區組長）。
+//   總管理者：班與課程（新增、修改、排一整年、每一堂）、點名、帳號、發通知、操作紀錄、下載備份、刪除舊資料。
+//   點名帳號：點名、出席紀錄。組長：到那一堂的頁面幫自己區的人報名、取消。權限由伺服器檢查。
 (function () {
   'use strict';
 
-  const UNIT_KEY = 'fentan-calendar:admin-unit';
   let view = null;
-  let events = null; // 上次讀到的手動活動
-  let units = null;
-  const filter = { unit: readUnit(), q: '', past: false };
-
-  function readUnit() {
-    try { return localStorage.getItem(UNIT_KEY) || '全部'; } catch (e) { return '全部'; }
-  }
-
-  function editableUnits() {
-    return units || [window.SITE.fentan].concat(window.SITE.units, window.SITE.testRegion);
-  }
+  let data = null; // adminCourses：全部的班和每一堂（含報名人數）
 
   function busy(on, text) {
     const box = document.getElementById('busy');
@@ -23,57 +13,50 @@
     box.querySelector('.busy-text').textContent = text || '處理中⋯';
   }
 
+  const who = () => Api.who() || { role: 'super', account: '總管理者' };
+
   function tabs(active) {
     const t = (hash, label, key) => `<a class="admin-tab${active === key ? ' is-active' : ''}" href="${hash}">${label}</a>`;
+    const w = who();
+    const nav = w.role === 'super'
+      ? t('#/admin', '班與課程', 'courses') + t('#/admin/roll', '✅ 點名', 'roll') + t('#/admin/accounts', '帳號', 'accounts') + t('#/admin/push', '📣 發通知', 'push') + t('#/admin/log', '操作紀錄', 'log')
+      : w.role === 'roll' ? t('#/admin/roll', '✅ 點名', 'roll') : '';
     return `
       <div class="admin-head">
-        <h1 class="admin-title">管理後台</h1>
+        <h1 class="admin-title">${w.role === 'super' ? '管理後台' : w.role === 'roll' ? '點名' : Fmt.esc(w.account) + '・組長'}</h1>
         <button type="button" class="link-btn" data-act="logout">登出</button>
       </div>
-      <nav class="admin-tabs">${t('#/admin', '活動', 'list')}${t('#/admin/new', '＋ 新增活動', 'new')}${t('#/admin/roster', '填名單', 'roster')}${t('#/admin/accounts', '帳號', 'accounts')}${t('#/admin/import', '匯入', 'import')}${t('#/admin/push', '📣 發通知', 'push')}${t('#/admin/log', '操作紀錄', 'log')}</nav>`;
+      ${nav ? `<nav class="admin-tabs">${nav}</nav>` : ''}`;
   }
 
   // ---------- 路由 ----------
 
   async function show(el, sub) {
     view = el;
-    const parts = (sub || '').split('/');
-    // 活動頁「✏️ 填寫名單」：#/admin/fill/<區>/<勤務 id>，沒登入就先登入（帳號選好那一區）
-    const fill = parts[0] === 'fill' ? { unit: decodeURIComponent(parts[1] || ''), id: decodeURIComponent(parts[2] || '') } : null;
-    if (!Api.isAdmin()) return renderLogin('', fill && fill.unit);
-    const who = Api.who() || { role: 'super' };
+    const parts = (sub || '').split('/').map(decodeURIComponent);
+    if (!Api.isAdmin()) return renderLogin('');
+    const role = who().role;
     try {
-      // 組長帳號：只有填名單
-      if (who.role === 'region') {
-        // 別區的連結：同一組（或併區）的就直接到那一筆；不是的才提醒（看名單裡有沒有那一筆）
-        const other = fill && fill.unit !== who.account ? `你登入的是${who.account}，只能填${who.account}的名單。要填${fill.unit}的，請先登出再用${fill.unit}的帳號登入。` : '';
-        return renderRoster(who.account, fill ? fill.id : '', '', other);
-      }
-      if (fill) return renderRoster(fill.unit, fill.id);
-      if (parts[0] === 'accounts') return renderAccounts();
-      if (parts[0] === 'roster') return renderRoster(decodeURIComponent(parts[1] || '') || window.SITE.fentan);
-      if (parts[0] === 'new') return renderForm(null, 'new');
-      if (parts[0] === 'edit' || parts[0] === 'copy') {
-        if (!events) await loadEvents();
-        const ev = events.find((e) => e.id === decodeURIComponent(parts[1] || ''));
-        if (!ev) return renderMissing();
-        return renderForm(ev, parts[0]);
-      }
-      if (parts[0] === 'log') return renderLog();
-      if (parts[0] === 'regroup') return renderRegroup();
-      if (parts[0] === 'import') return renderImport();
-      if (parts[0] === 'push') return renderPush();
-      await renderList();
+      if (role === 'region') return await renderRegion();
+      if (parts[0] === 'roll' && parts[1]) return await renderRoll(parts[1]);
+      if (parts[0] === 'attendance' && parts[1]) return await renderAttendance(parts[1]);
+      if (role === 'roll' || parts[0] === 'roll') return await renderRollPick();
+      if (parts[0] === 'course' && parts[1] === 'new') return await renderCourseForm(null);
+      if (parts[0] === 'course' && parts[2] === 'edit') return await renderCourseForm(parts[1]);
+      if (parts[0] === 'course' && parts[1]) return await renderCourse(parts[1]);
+      if (parts[0] === 'session' && parts[1] === 'new') return await renderSessionForm(null, parts[2]);
+      if (parts[0] === 'session' && parts[1]) return await renderSessionForm(parts[1]);
+      if (parts[0] === 'accounts') return await renderAccounts();
+      if (parts[0] === 'push') return await renderPush();
+      if (parts[0] === 'log') return await renderLog();
+      return await renderCourses();
     } catch (err) {
       handleError(err);
     }
   }
 
   function handleError(err) {
-    if (err.code === 'UNAUTHORIZED') {
-      renderLogin(err.message);
-      return;
-    }
+    if (err.code === 'UNAUTHORIZED' && /登入/.test(err.message)) return renderLogin(err.message);
     view.innerHTML = `<div class="notice notice-error"><p>${Fmt.esc(err.message || '發生錯誤')}</p></div><button type="button" class="btn" onclick="location.reload()">重新整理</button>`;
   }
 
@@ -81,14 +64,25 @@
     const out = view.querySelector('[data-act="logout"]');
     if (out) out.addEventListener('click', () => {
       Api.adminLogout();
-      events = null;
-      renderLogin();
+      data = null;
+      HomePage.refresh();
+      renderLogin('');
     });
   }
 
+  async function load(fresh) {
+    if (!data || fresh) data = await Api.admin('adminCourses');
+    return data;
+  }
+
+  const findSession = (id) => {
+    for (const c of data.courses) { const s = c.sessions.find((x) => x.id === id); if (s) return { c, s }; }
+    return null;
+  };
+
   // ---------- 登入 ----------
 
-  async function renderLogin(message, preset) {
+  async function renderLogin(message) {
     let accounts = ['總管理者'];
     try { accounts = (await Api.loginAccounts()).accounts; } catch (e) { /* 讀不到：只列總管理者 */ }
     let last = '';
@@ -97,13 +91,13 @@
       <form class="admin-login" autocomplete="off">
         <div class="login-head">
           <img class="login-logo" src="icons/icon-192.png" alt="" width="72" height="72">
-          <h1 class="login-title">管理後台</h1>
+          <h1 class="login-title">管理者登入</h1>
           <p class="login-sub">${Fmt.esc(window.SITE.name)}</p>
         </div>
         ${message ? `<p class="form-error">${Fmt.esc(message)}</p>` : ''}
         <label class="login-field">
           <span>帳號</span>
-          <select class="input login-input" name="account">${accounts.map((a) => `<option${a === (preset && accounts.indexOf(preset) !== -1 ? preset : last) ? ' selected' : ''}>${Fmt.esc(a)}</option>`).join('')}</select>
+          <select class="input login-input" name="account">${accounts.map((a) => `<option${a === last ? ' selected' : ''}>${Fmt.esc(a)}</option>`).join('')}</select>
         </label>
         <label class="login-field">
           <span>密碼</span>
@@ -114,15 +108,15 @@
         </label>
         <p class="form-error" hidden></p>
         <button type="submit" class="btn btn-primary btn-block login-submit">登入</button>
-        <p class="login-foot">各區組長選自己的區登入填名單；家人們看行事曆不用登入</p>
+        <p class="login-foot">幹部點名選「點名」；各區組長選自己的區。家人報名不用登入。</p>
       </form>`;
     const form = view.querySelector('form');
     const input = form.password;
     const errBox = form.querySelector('.form-error[hidden]');
     form.querySelector('.login-eye').addEventListener('click', (ev) => {
-      const show = input.type === 'password';
-      input.type = show ? 'text' : 'password';
-      ev.currentTarget.textContent = show ? '隱藏' : '顯示';
+      const on = input.type === 'password';
+      input.type = on ? 'text' : 'password';
+      ev.currentTarget.textContent = on ? '隱藏' : '顯示';
     });
     form.addEventListener('submit', async (ev) => {
       ev.preventDefault();
@@ -132,6 +126,7 @@
         await Api.adminLogin(input.value, form.account.value === '總管理者' ? '' : form.account.value);
         try { localStorage.setItem('fentan-calendar:last-account', form.account.value); } catch (x) { /* 忽略 */ }
         busy(false);
+        HomePage.refresh();
         show(view, location.hash.replace(/^#\/admin\/?/, ''));
       } catch (err) {
         busy(false);
@@ -143,28 +138,469 @@
     input.focus();
   }
 
-  // ---------- 各區組長：帳號、填名單（規格第 9-4 節） ----------
+  // ---------- 組長：到那一堂的頁面幫自己區報名 ----------
 
-  const md = (d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
+  async function renderRegion() {
+    const w = who();
+    view.innerHTML = tabs('') + '<p class="panel-empty">載入中⋯</p>';
+    bindCommon();
+    const b = await Api.getBoard(true);
+    const rows = b.courses.flatMap((c) => c.sessions.filter((s) => s.date >= b.today && !s.cancelled).slice(0, 4).map((s) => ({ c, s })))
+      .sort((x, y) => x.s.date.localeCompare(y.s.date));
+    view.innerHTML = tabs('') + `
+      <p class="hint">點一堂課，在「報名」可以幫${Fmt.esc(w.account)}的人報名（截止後也可以）；名單上${Fmt.esc(w.account)}的人旁邊有「取消」。</p>
+      <div class="session-list">${rows.length ? rows.map(({ c, s }) => `
+        <a class="session-row" href="#/s/${encodeURIComponent(s.id)}">
+          <span class="session-date">${Fmt.esc(Fmt.shortDate(s.date))}<small>第 ${s.no} 堂</small></span>
+          <span class="session-main"><span class="course-tag c-${Fmt.esc(c.color)}">${Fmt.esc(c.name)}</span>${s.topic ? `<strong>${Fmt.esc(s.topic)}</strong>` : ''}</span>
+          <span class="session-side">${s.count} 人</span>
+        </a>`).join('') : '<p class="panel-empty">目前沒有接下來的課</p>'}</div>`;
+    bindCommon();
+  }
 
-  /** 總管理者：每區一個組長帳號，設定或刪除密碼 */
+  // ---------- 班與課程（總管理者） ----------
+
+  async function renderCourses() {
+    view.innerHTML = tabs('courses') + '<p class="panel-empty">載入中⋯</p>';
+    bindCommon();
+    const [d, old] = await Promise.all([load(true), Api.admin('adminOldCount')]);
+    const next = (c) => c.sessions.find((s) => s.date >= d.today && !s.cancelled);
+    view.innerHTML = tabs('courses') + `
+      ${old.count ? `<div class="notice"><p>第一版（行事曆）留下的總務、道務活動還有 <strong>${old.count}</strong> 筆。先按「⬇ 下載備份」存一份，再按「刪除舊資料」。</p>
+        <div class="admin-actions"><button type="button" class="btn btn-small" data-act="backup">⬇ 下載備份</button><button type="button" class="btn btn-small btn-quiet-danger" data-act="purge">刪除舊資料</button></div></div>` : ''}
+      <div class="admin-actions">
+        <a class="btn btn-primary" href="#/admin/course/new">＋ 新增班</a>
+        <button type="button" class="btn" data-act="backup">⬇ 下載備份</button>
+      </div>
+      <ul class="admin-list">${d.courses.length ? d.courses.map((c) => {
+        const n = next(c);
+        return `
+        <li class="admin-row${c.open ? '' : ' is-past'}">
+          <div class="admin-row-main">
+            <span><span class="course-tag c-${Fmt.esc(c.color)}">${Fmt.esc(c.name)}</span>${c.open ? '' : '<span class="muted">（收起來，主畫面看不到）</span>'}</span>
+            <span class="card-meta">${c.sessions.length} 堂${n ? `・下一堂 ${Fmt.esc(Fmt.shortDate(n.date))}（第 ${n.no} 堂，${n.count} 人報名）` : '・沒有接下來的課'}</span>
+          </div>
+          <div class="admin-row-actions">
+            <a class="btn btn-small btn-primary" href="#/admin/course/${encodeURIComponent(c.id)}">每一堂</a>
+            <a class="btn btn-small" href="#/admin/course/${encodeURIComponent(c.id)}/edit">修改班</a>
+          </div>
+        </li>`;
+      }).join('') : '<li class="panel-empty">還沒有班，按「＋ 新增班」開始</li>'}</ul>`;
+    bindCommon();
+    view.querySelectorAll('[data-act="backup"]').forEach((b) => b.addEventListener('click', backup));
+    const purge = view.querySelector('[data-act="purge"]');
+    if (purge) purge.addEventListener('click', async () => {
+      if (!window.confirm(`確定要刪除第一版留下的 ${old.count} 筆總務、道務活動嗎？\n刪除後不能還原，請確定已經下載備份。`)) return;
+      busy(true, '刪除中⋯');
+      try { await Api.admin('adminPurgeOld'); busy(false); renderCourses(); } catch (err) { busy(false); handleError(err); }
+    });
+  }
+
+  async function backup() {
+    busy(true, '準備備份⋯');
+    try {
+      const b = await Api.admin('adminBackup');
+      const blob = new Blob([JSON.stringify(b, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `education-backup-${Fmt.toDateStr(new Date()).replace(/-/g, '')}.json`;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+      busy(false);
+    } catch (err) {
+      busy(false);
+      handleError(err);
+    }
+  }
+
+  /** 時間只給整點、半點（05:00～23:30）；原本存的不是整點半點的也列出來 */
+  function timeOptions(value) {
+    const list = [];
+    for (let h = 5; h <= 23; h++) ['00', '30'].forEach((m) => list.push(String(h).padStart(2, '0') + ':' + m));
+    if (value && list.indexOf(value) === -1) { list.push(value); list.sort(); }
+    return '<option value="">不填</option>' + list.map((t) => `<option${t === value ? ' selected' : ''}>${t}</option>`).join('');
+  }
+
+  /** 下一個星期六（今天是星期六就今天） */
+  function nextSaturday() {
+    const d = new Date();
+    d.setDate(d.getDate() + ((6 - d.getDay() + 7) % 7));
+    return Fmt.toDateStr(d);
+  }
+
+  async function renderCourseForm(id) {
+    const d = await load(false);
+    const c = id ? d.courses.find((x) => x.id === id) : { name: '', color: window.SITE.colors[d.courses.length % window.SITE.colors.length], intro: '', startTime: '', endTime: '', location: '', open: true, order: d.courses.length + 1, sessions: [] };
+    if (!c) return renderMissing();
+    const first = nextSaturday();
+    view.innerHTML = tabs('courses') + `
+      <form class="admin-form" novalidate>
+        <h2 class="admin-sub">${id ? '修改班' : '新增班'}</h2>
+        <fieldset class="form-block">
+          <legend>班</legend>
+          <label class="form-row"><span>班的名稱</span><input class="input" name="name" maxlength="30" value="${Fmt.esc(c.name)}" placeholder="例：高大班"></label>
+          <div class="form-row"><span>顏色</span><div class="color-pick">${window.SITE.colors.map((k) => `<label class="color-chip c-${k}"><input type="radio" name="color" value="${k}"${k === c.color ? ' checked' : ''}><span>${window.SITE.colorNames[k]}</span></label>`).join('')}</div></div>
+          <label class="form-row"><span>介紹（可以不填）</span><textarea class="input textarea" name="intro" rows="4" maxlength="1000">${Fmt.esc(c.intro)}</textarea></label>
+          <div class="form-row-pair">
+            <label><span>平常幾點開始</span><select class="input" name="startTime">${timeOptions(c.startTime)}</select></label>
+            <label><span>幾點結束</span><select class="input" name="endTime">${timeOptions(c.endTime)}</select></label>
+          </div>
+          <label class="form-row"><span>平常的地點</span><input class="input" name="location" maxlength="60" value="${Fmt.esc(c.location)}"></label>
+          <label class="check-row"><input type="checkbox" name="open"${c.open ? ' checked' : ''}> <span>開放（主畫面看得到、可以報名）</span></label>
+          <label class="form-row"><span>主畫面的順序（數字小的在前面）</span><input class="input" name="order" inputmode="numeric" value="${Fmt.esc(c.order)}"></label>
+        </fieldset>
+        ${id ? '' : `
+        <fieldset class="form-block">
+          <legend>排課</legend>
+          <label class="radio-row"><input type="radio" name="plan" value="year" checked> 隔週六上課，一次排一整年</label>
+          <div class="plan-year form-row-pair">
+            <label><span>第一堂</span><input class="input" type="date" name="first" value="${first}"></label>
+            <label><span>排到哪一天</span><input class="input" type="date" name="until" value="${Fmt.addDays(first, 364)}"></label>
+          </div>
+          <label class="radio-row"><input type="radio" name="plan" value="one"> 只有一堂（臨時活動）</label>
+          <label class="form-row plan-one" hidden><span>日期</span><input class="input" type="date" name="date" value="${first}"></label>
+          <label class="radio-row"><input type="radio" name="plan" value="none"> 先不排，之後再加</label>
+          <p class="hint">時間、地點會用上面「平常」的；排好以後每一堂都可以再改主題、講師、日期，或標停課。</p>
+        </fieldset>`}
+        <p class="form-error" hidden></p>
+        <button type="submit" class="btn btn-primary btn-block">${id ? '儲存' : '新增'}</button>
+        ${id ? '<button type="button" class="btn btn-block btn-quiet-danger" data-act="delete">刪除這個班</button>' : ''}
+        <a class="btn btn-block back-btn" href="${id ? `#/admin/course/${encodeURIComponent(id)}` : '#/admin'}">取消</a>
+      </form>`;
+    bindCommon();
+    const form = view.querySelector('form');
+    const errBox = form.querySelector('.form-error');
+    if (!id) form.addEventListener('change', () => {
+      form.querySelector('.plan-year').hidden = form.plan.value !== 'year';
+      form.querySelector('.plan-one').hidden = form.plan.value !== 'one';
+    });
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const course = {
+        name: form.name.value.trim(), color: form.color.value, intro: form.intro.value.trim(),
+        startTime: form.startTime.value, endTime: form.endTime.value, location: form.location.value.trim(),
+        open: form.open.checked, order: form.order.value.trim() || 0
+      };
+      if (id) course.id = id;
+      const errs = [];
+      if (!course.name) errs.push('請填班的名稱');
+      if (course.endTime && !course.startTime) errs.push('有結束時間就要選開始時間');
+      let plan = null;
+      if (!id && form.plan.value === 'year') {
+        if (!form.first.value) errs.push('請選第一堂的日期');
+        plan = { first: form.first.value, until: form.until.value };
+      }
+      if (!id && form.plan.value === 'one') {
+        if (!form.date.value) errs.push('請選日期');
+        plan = { dates: [form.date.value] };
+      }
+      if (errs.length) { errBox.textContent = errs.join('；'); errBox.hidden = false; return; }
+      busy(true, '儲存中⋯');
+      try {
+        const res = await Api.admin('adminCourseSave', { course, plan });
+        busy(false);
+        HomePage.refresh();
+        data = null;
+        location.hash = '#/admin/course/' + encodeURIComponent(res.course.id);
+      } catch (err) {
+        busy(false);
+        if (err.code === 'UNAUTHORIZED' && /登入/.test(err.message)) return renderLogin(err.message);
+        errBox.textContent = err.message;
+        errBox.hidden = false;
+      }
+    });
+    const del = form.querySelector('[data-act="delete"]');
+    if (del) del.addEventListener('click', async () => {
+      const n = c.sessions.reduce((a, s) => a + s.count, 0);
+      if (!window.confirm(`確定要刪除「${c.name}」嗎？\n${c.sessions.length} 堂課、${n} 筆報名和點名紀錄會一起刪掉，不能還原。\n只是這期結束的話，也可以取消勾選「開放」就好。`)) return;
+      busy(true, '刪除中⋯');
+      try { await Api.admin('adminCourseDelete', { id }); busy(false); HomePage.refresh(); data = null; location.hash = '#/admin'; } catch (err) { busy(false); handleError(err); }
+    });
+  }
+
+  function renderMissing() {
+    view.innerHTML = tabs('') + '<div class="notice notice-error"><p>找不到，可能已經刪除了。</p></div><a class="btn" href="#/admin">回班與課程</a>';
+    bindCommon();
+  }
+
+  async function renderCourse(id) {
+    view.innerHTML = tabs('courses') + '<p class="panel-empty">載入中⋯</p>';
+    bindCommon();
+    const d = await load(true);
+    const c = d.courses.find((x) => x.id === id);
+    if (!c) return renderMissing();
+    const last = c.sessions.length ? c.sessions[c.sessions.length - 1].date : '';
+    const first = last ? Fmt.addDays(last, 14) : nextSaturday();
+    view.innerHTML = tabs('courses') + `
+      <div class="page-head c-${Fmt.esc(c.color)}"><h1>${Fmt.esc(c.name)}</h1><p>${Fmt.esc([Fmt.timeRange(c), c.location].filter(Boolean).join('・'))}${c.open ? '' : '・收起來（主畫面看不到）'}</p></div>
+      <div class="admin-actions">
+        <a class="btn btn-small" href="#/admin/course/${encodeURIComponent(c.id)}/edit">修改班</a>
+        <a class="btn btn-small" href="#/admin/session/new/${encodeURIComponent(c.id)}">＋ 加一堂</a>
+        <a class="btn btn-small" href="#/admin/attendance/${encodeURIComponent(c.id)}">出席紀錄</a>
+      </div>
+      <p class="hint">點一堂可以改主題、講師、日期，或標停課。</p>
+      <div class="session-list">${c.sessions.map((s) => `
+        <a class="session-row${s.cancelled ? ' is-off' : s.date < d.today ? ' is-past' : ''}" href="#/admin/session/${encodeURIComponent(s.id)}">
+          <span class="session-date">${Fmt.esc(Fmt.shortDate(s.date))}<small>${s.cancelled ? '停課' : `第 ${s.no} 堂`}</small></span>
+          <span class="session-main">${s.topic ? `<strong>${Fmt.esc(s.topic)}</strong>` : '<span class="muted">主題還沒排</span>'}${s.teacher ? `<small>講師：${Fmt.esc(s.teacher)}</small>` : ''}</span>
+          <span class="session-side">${s.cancelled ? '' : `${s.count} 人`}<small class="muted">修改 ›</small></span>
+        </a>`).join('') || '<p class="panel-empty">還沒有課</p>'}</div>
+      <form class="admin-form make-form" novalidate>
+        <fieldset class="form-block">
+          <legend>再排一段（隔週六）</legend>
+          <div class="form-row-pair">
+            <label><span>從哪一天</span><input class="input" type="date" name="first" value="${first}"></label>
+            <label><span>排到哪一天</span><input class="input" type="date" name="until" value="${Fmt.addDays(first, 364)}"></label>
+          </div>
+          <p class="form-error" hidden></p>
+          <button type="submit" class="btn">排課</button>
+        </fieldset>
+      </form>
+      <a class="btn btn-block back-btn" href="#/admin">‹ 回班與課程</a>`;
+    bindCommon();
+    const form = view.querySelector('.make-form');
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const errBox = form.querySelector('.form-error');
+      busy(true, '排課中⋯');
+      try {
+        const res = await Api.admin('adminSessionsMake', { courseId: c.id, plan: { first: form.first.value, until: form.until.value } });
+        busy(false);
+        HomePage.refresh();
+        await renderCourse(id);
+        if (!res.made) window.alert('這段日期的課都已經有了');
+      } catch (err) {
+        busy(false);
+        errBox.textContent = err.message;
+        errBox.hidden = false;
+      }
+    });
+  }
+
+  async function renderSessionForm(id, courseId) {
+    await load(false);
+    let c;
+    let s;
+    if (id) {
+      let f = findSession(id);
+      if (!f) { await load(true); f = findSession(id); }
+      if (!f) return renderMissing();
+      c = f.c; s = f.s;
+    } else {
+      c = data.courses.find((x) => x.id === courseId);
+      if (!c) return renderMissing();
+      const last = c.sessions.length ? c.sessions[c.sessions.length - 1].date : '';
+      s = { date: last ? Fmt.addDays(last, 14) : nextSaturday(), startTime: c.startTime, endTime: c.endTime, location: c.location, topic: '', teacher: '', content: '', setDeadline: '', cap: null, cancelled: false, count: 0 };
+    }
+    view.innerHTML = tabs('courses') + `
+      <form class="admin-form" novalidate>
+        <h2 class="admin-sub"><span class="course-tag c-${Fmt.esc(c.color)}">${Fmt.esc(c.name)}</span> ${id ? (s.cancelled ? '停課的這一堂' : `第 ${s.no} 堂`) : '加一堂'}</h2>
+        <fieldset class="form-block">
+          <legend>時間地點</legend>
+          <label class="form-row"><span>日期</span><input class="input" type="date" name="date" value="${Fmt.esc(s.date)}"></label>
+          <div class="form-row-pair">
+            <label><span>開始時間</span><select class="input" name="startTime">${timeOptions(s.startTime)}</select></label>
+            <label><span>結束時間</span><select class="input" name="endTime">${timeOptions(s.endTime)}</select></label>
+          </div>
+          <label class="form-row"><span>地點</span><input class="input" name="location" maxlength="60" value="${Fmt.esc(s.location)}"></label>
+        </fieldset>
+        <fieldset class="form-block">
+          <legend>上什麼</legend>
+          <label class="form-row"><span>主題</span><input class="input" name="topic" maxlength="60" value="${Fmt.esc(s.topic)}"></label>
+          <label class="form-row"><span>講師</span><input class="input" name="teacher" maxlength="40" value="${Fmt.esc(s.teacher)}"></label>
+          <label class="form-row"><span>課程內容（可以不填）</span><textarea class="input textarea" name="content" rows="4" maxlength="1000">${Fmt.esc(s.content)}</textarea></label>
+        </fieldset>
+        <fieldset class="form-block">
+          <legend>報名</legend>
+          <div class="form-row-pair">
+            <label><span>報名截止（不填＝上課前一天）</span><input class="input" type="date" name="deadline" value="${Fmt.esc(s.setDeadline || '')}"></label>
+            <label><span>名額（不填＝不限）</span><input class="input" name="cap" inputmode="numeric" value="${s.cap === null || s.cap === undefined ? '' : s.cap}"></label>
+          </div>
+          <label class="check-row"><input type="checkbox" name="cancelled"${s.cancelled ? ' checked' : ''}> <span>這堂停課（主畫面寫停課、不能報名）</span></label>
+        </fieldset>
+        <p class="form-error" hidden></p>
+        <button type="submit" class="btn btn-primary btn-block">${id ? '儲存' : '加這一堂'}</button>
+        ${id ? `<a class="btn btn-block" href="#/s/${encodeURIComponent(id)}">看報名頁（${s.count} 人）</a>${s.cancelled ? '' : `<a class="btn btn-block" href="#/admin/roll/${encodeURIComponent(id)}">✅ 點名</a>`}
+        <button type="button" class="btn btn-block btn-quiet-danger" data-act="delete">刪除這一堂</button>` : ''}
+        <a class="btn btn-block back-btn" href="#/admin/course/${encodeURIComponent(c.id)}">取消</a>
+      </form>`;
+    bindCommon();
+    const form = view.querySelector('form');
+    const errBox = form.querySelector('.form-error');
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const session = {
+        courseId: c.id, date: form.date.value, startTime: form.startTime.value, endTime: form.endTime.value, location: form.location.value.trim(),
+        topic: form.topic.value.trim(), teacher: form.teacher.value.trim(), content: form.content.value.trim(),
+        deadline: form.deadline.value, cap: form.cap.value.trim(), cancelled: form.cancelled.checked
+      };
+      if (id) session.id = id;
+      if (!session.date) { errBox.textContent = '請選日期'; errBox.hidden = false; return; }
+      busy(true, '儲存中⋯');
+      try {
+        await Api.admin('adminSessionSave', { session });
+        busy(false);
+        HomePage.refresh();
+        data = null;
+        location.hash = '#/admin/course/' + encodeURIComponent(c.id);
+      } catch (err) {
+        busy(false);
+        if (err.code === 'UNAUTHORIZED' && /登入/.test(err.message)) return renderLogin(err.message);
+        errBox.textContent = err.message;
+        errBox.hidden = false;
+      }
+    });
+    const del = form.querySelector('[data-act="delete"]');
+    if (del) del.addEventListener('click', async () => {
+      if (!window.confirm(`確定要刪除 ${Fmt.shortDate(s.date)} 這一堂嗎？${s.count ? `\n${s.count} 筆報名和點名會一起刪掉。` : ''}\n不上課的話，也可以勾「這堂停課」就好。`)) return;
+      busy(true, '刪除中⋯');
+      try { await Api.admin('adminSessionDelete', { id }); busy(false); HomePage.refresh(); data = null; location.hash = '#/admin/course/' + encodeURIComponent(c.id); } catch (err) { busy(false); handleError(err); }
+    });
+  }
+
+  // ---------- 點名（點名帳號、總管理者） ----------
+
+  async function renderRollPick() {
+    view.innerHTML = tabs('roll') + '<p class="panel-empty">載入中⋯</p>';
+    bindCommon();
+    const d = await load(true);
+    const from = Fmt.addDays(d.today, -21);
+    const to = Fmt.addDays(d.today, 21);
+    const rows = d.courses.flatMap((c) => c.sessions.filter((s) => !s.cancelled && s.date >= from && s.date <= to).map((s) => ({ c, s })))
+      .sort((x, y) => x.s.date.localeCompare(y.s.date) || (x.s.startTime || '').localeCompare(y.s.startTime || ''));
+    view.innerHTML = tabs('roll') + `
+      <p class="hint">選要點名的那一堂（前後三週）。</p>
+      <div class="session-list">${rows.length ? rows.map(({ c, s }) => `
+        <a class="session-row${s.date === d.today ? ' is-today' : s.date < d.today ? ' is-past' : ''}" href="#/admin/roll/${encodeURIComponent(s.id)}">
+          <span class="session-date">${s.date === d.today ? '今天' : Fmt.esc(Fmt.shortDate(s.date))}<small>第 ${s.no} 堂</small></span>
+          <span class="session-main"><span class="course-tag c-${Fmt.esc(c.color)}">${Fmt.esc(c.name)}</span>${s.topic ? `<strong>${Fmt.esc(s.topic)}</strong>` : ''}</span>
+          <span class="session-side">${s.count} 人報名</span>
+        </a>`).join('') : '<p class="panel-empty">前後三週沒有課</p>'}</div>
+      <h2 class="admin-sub">出席紀錄</h2>
+      <div class="admin-actions">${d.courses.map((c) => `<a class="btn btn-small" href="#/admin/attendance/${encodeURIComponent(c.id)}"><span class="course-tag c-${Fmt.esc(c.color)}">${Fmt.esc(c.name)}</span></a>`).join('') || '<span class="muted">還沒有班</span>'}</div>`;
+    bindCommon();
+  }
+
+  async function renderRoll(sid) {
+    view.innerHTML = tabs('roll') + '<p class="panel-empty">載入中⋯</p>';
+    bindCommon();
+    const r = await Api.admin('adminRoll', { sessionId: sid });
+    const s = r.session;
+    const c = r.course;
+    const list = r.signups;
+    const stats = () => {
+      const n = (k) => list.filter((x) => x.roll === k).length;
+      return `報名 <b>${list.length}</b>・到 <b>${n('到')}</b>・請假 <b>${n('請假')}</b>・缺席 <b>${n('缺席')}</b>・還沒點 <b>${n('')}</b>`;
+    };
+    const by = {};
+    list.forEach((x) => { (by[x.unit] ||= []).push(x); });
+    view.innerHTML = tabs('roll') + `
+      <div class="page-head c-${Fmt.esc(c.color)}"><h1>${Fmt.esc(c.name)}${s.no ? `・第 ${s.no} 堂` : ''}</h1><p>${Fmt.esc([Fmt.shortDate(s.date), Fmt.timeRange(s), s.topic].filter(Boolean).join('・'))}</p></div>
+      <p class="roll-stats" aria-live="polite">${stats()}</p>
+      ${window.SITE.units.filter((u) => by[u]).map((u) => `
+        <div class="roll-group">
+          <p class="unit-group-head"><span class="unit-tag">${Fmt.esc(u)}</span><span class="muted">${by[u].length} 人</span></p>
+          ${by[u].map((x) => `
+            <div class="roll-row" data-id="${Fmt.esc(x.id)}">
+              <span class="roll-name">${Fmt.esc(x.name)}${x.by === 'walkin' ? '<small>現場加</small>' : ''}</span>
+              <span class="roll-btns">${['到', '請假', '缺席'].map((k) => `<button type="button" class="roll-btn roll-${k}${x.roll === k ? ' is-on' : ''}" data-status="${k}" aria-pressed="${x.roll === k}">${k}</button>`).join('')}</span>
+            </div>`).join('')}
+        </div>`).join('') || '<p class="panel-empty">這堂還沒有人報名</p>'}
+      <form class="admin-form walkin-form" novalidate>
+        <fieldset class="form-block">
+          <legend>＋ 沒報名但來了</legend>
+          <label class="form-row"><span>姓名（好幾個人中間空一格）</span><input class="input" name="names"></label>
+          <label class="form-row"><span>區</span><select class="input" name="unit">${Fmt.unitOptions('', '請選擇區')}</select></label>
+          <p class="form-error" hidden></p>
+          <button type="submit" class="btn">加進來（記「到」）</button>
+        </fieldset>
+      </form>
+      <a class="btn btn-block back-btn" href="#/admin/roll">‹ 選別堂</a>`;
+    bindCommon();
+    view.querySelectorAll('.roll-row').forEach((row) => row.addEventListener('click', async (e) => {
+      const b = e.target.closest('[data-status]');
+      if (!b) return;
+      const x = list.find((y) => y.id === row.dataset.id);
+      const status = x.roll === b.dataset.status ? '' : b.dataset.status; // 再按一次同一個＝取消
+      const before = x.roll;
+      const paint = () => {
+        row.querySelectorAll('[data-status]').forEach((k) => { const on = k.dataset.status === x.roll; k.classList.toggle('is-on', on); k.setAttribute('aria-pressed', String(on)); });
+        view.querySelector('.roll-stats').innerHTML = stats();
+      };
+      x.roll = status;
+      paint();
+      try { await Api.admin('adminRollSet', { id: x.id, status }); } catch (err) {
+        x.roll = before;
+        paint();
+        if (err.code === 'UNAUTHORIZED' && /登入/.test(err.message)) return renderLogin(err.message);
+        window.alert(err.message);
+      }
+    }));
+    const form = view.querySelector('.walkin-form');
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const errBox = form.querySelector('.form-error');
+      if (!form.names.value.trim() || !form.unit.value) { errBox.textContent = '請填姓名、選區'; errBox.hidden = false; return; }
+      busy(true, '加入中⋯');
+      try {
+        await Api.admin('adminRollAdd', { sessionId: sid, names: form.names.value, unit: form.unit.value });
+        busy(false);
+        HomePage.refresh();
+        renderRoll(sid);
+      } catch (err) {
+        busy(false);
+        errBox.textContent = err.message;
+        errBox.hidden = false;
+      }
+    });
+  }
+
+  async function renderAttendance(cid) {
+    view.innerHTML = tabs('roll') + '<p class="panel-empty">載入中⋯</p>';
+    bindCommon();
+    const r = await Api.admin('adminAttendance', { courseId: cid });
+    view.innerHTML = tabs('roll') + `
+      <div class="page-head c-${Fmt.esc(r.course.color)}"><h1>${Fmt.esc(r.course.name)}・出席紀錄</h1><p>共 ${r.sessions.length} 堂（不算停課）、${r.people.length} 人</p></div>
+      <div class="admin-actions"><button type="button" class="btn btn-small" data-act="csv">⬇ 下載（Excel 可以開）</button></div>
+      <div class="table-wrap"><table class="admin-table">
+        <thead><tr><th>區</th><th>姓名</th><th>報名</th><th>到</th><th>請假</th><th>缺席</th></tr></thead>
+        <tbody>${r.people.map((p) => `<tr><td>${Fmt.esc(p.unit)}</td><td>${Fmt.esc(p.name)}</td><td class="num">${p.signups}</td><td class="num">${p.到}</td><td class="num">${p.請假}</td><td class="num">${p.缺席}</td></tr>`).join('') || '<tr><td colspan="6" class="panel-empty">還沒有報名紀錄</td></tr>'}</tbody>
+      </table></div>
+      <a class="btn btn-block back-btn" href="#/admin/roll">‹ 回點名</a>`;
+    bindCommon();
+    view.querySelector('[data-act="csv"]').addEventListener('click', () => {
+      const q = (v) => `"${String(v).replace(/"/g, '""')}"`;
+      const head = ['區', '姓名', '報名', '到', '請假', '缺席'].concat(r.sessions.map((s) => `${Fmt.md(s.date)} 第${s.no}堂`));
+      const lines = [head].concat(r.people.map((p) => [p.unit, p.name, p.signups, p.到, p.請假, p.缺席].concat(r.sessions.map((s) => p.rolls[s.id] || ''))));
+      const blob = new Blob(['﻿' + lines.map((l) => l.map(q).join(',')).join('\r\n')], { type: 'text/csv;charset=utf-8' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `${r.course.name}-出席紀錄.csv`;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+    });
+  }
+
+  // ---------- 帳號 ----------
+
   async function renderAccounts() {
     view.innerHTML = tabs('accounts') + '<p class="panel-empty">載入中⋯</p>';
     bindCommon();
-    const data = await Api.admin('adminAccounts');
+    const d = await Api.admin('adminAccounts');
+    const label = (n) => (n === window.SITE.roll ? '點名（幹部共用）' : n + '組長');
     view.innerHTML = tabs('accounts') + `
-      <h2 class="admin-sub">各區組長帳號</h2>
-      <p class="hint">每區一個帳號。設好密碼（至少 6 個字）交給那一區的組長，組長登入後只能填「分壇派給這一區的勤務」的名單，不能改活動。改密碼後，已經登入的會被登出。</p>
-      <ul class="admin-list">${data.accounts.map((a) => `
+      <p class="hint">「點名」是幹部共用的一組密碼，只能點名、看出席紀錄。各區組長可以幫自己區的人報名、取消。密碼至少 6 個字；改密碼後，已經登入的會被登出。</p>
+      <ul class="admin-list">${d.accounts.map((a) => `
         <li class="admin-row">
-          <div class="admin-row-main"><strong>${Fmt.esc(a.unit)}</strong><span class="card-meta">${a.hasPassword ? '已設密碼' : '還沒有帳號'}</span></div>
+          <div class="admin-row-main"><strong>${Fmt.esc(label(a.name))}</strong><span class="card-meta">${a.hasPassword ? '已設密碼' : '還沒有帳號'}</span></div>
           <div class="admin-row-actions">
-            <a class="btn btn-small" href="#/admin/roster/${encodeURIComponent(a.unit)}">看名單</a>
-            <button type="button" class="btn btn-small" data-edit="${Fmt.esc(a.unit)}">${a.hasPassword ? '改密碼' : '設密碼'}</button>
-            ${a.hasPassword ? `<button type="button" class="btn btn-small btn-quiet-danger" data-remove="${Fmt.esc(a.unit)}">刪除帳號</button>` : ''}
+            <button type="button" class="btn btn-small" data-edit="${Fmt.esc(a.name)}">${a.hasPassword ? '改密碼' : '設密碼'}</button>
+            ${a.hasPassword ? `<button type="button" class="btn btn-small btn-quiet-danger" data-remove="${Fmt.esc(a.name)}">刪除帳號</button>` : ''}
           </div>
-          <form class="region-form" data-form="${Fmt.esc(a.unit)}" hidden>
-            <label class="form-row"><span>${Fmt.esc(a.unit)}組長的密碼（至少 6 個字）</span><input class="input" type="password" name="password" autocomplete="new-password" minlength="6"></label>
+          <form class="region-form" data-form="${Fmt.esc(a.name)}" hidden>
+            <label class="form-row"><span>${Fmt.esc(label(a.name))}的密碼（至少 6 個字）</span><input class="input" type="password" name="password" autocomplete="new-password" minlength="6"></label>
             <p class="form-error" hidden></p>
             <button type="submit" class="btn btn-primary">儲存</button>
           </form>
@@ -176,933 +612,28 @@
       if (!f.hidden) f.password.focus();
     }));
     view.querySelectorAll('[data-remove]').forEach((b) => b.addEventListener('click', async () => {
-      if (!window.confirm(`確定要刪除${b.dataset.remove}的組長帳號？刪除後組長不能再登入填名單（已經填的名單會保留）。`)) return;
+      if (!window.confirm(`確定要刪除「${label(b.dataset.remove)}」的帳號？刪除後就不能再登入。`)) return;
       busy(true, '刪除中⋯');
-      try { await Api.admin('adminSetAccount', { unit: b.dataset.remove, remove: true }); busy(false); renderAccounts(); } catch (err) { busy(false); handleError(err); }
+      try { await Api.admin('adminSetAccount', { name: b.dataset.remove, remove: true }); busy(false); renderAccounts(); } catch (err) { busy(false); handleError(err); }
     }));
     view.querySelectorAll('.region-form').forEach((f) => f.addEventListener('submit', async (e) => {
       e.preventDefault();
       const err = f.querySelector('.form-error');
       busy(true, '儲存中⋯');
       try {
-        await Api.admin('adminSetAccount', { unit: f.dataset.form, password: f.password.value });
+        await Api.admin('adminSetAccount', { name: f.dataset.form, password: f.password.value });
         busy(false);
         renderAccounts();
       } catch (x) {
         busy(false);
-        if (x.code === 'UNAUTHORIZED') return renderLogin(x.message);
+        if (x.code === 'UNAUTHORIZED' && /登入/.test(x.message)) return renderLogin(x.message);
         err.textContent = x.message;
         err.hidden = false;
       }
     }));
   }
 
-  /** 填名單：組長看自己區的；總管理者可以選任何一區 */
-  async function renderRoster(unit, focusId, notice, otherNotice) {
-    const who = Api.who() || { role: 'super' };
-    const isRegion = who.role === 'region';
-    const head = isRegion
-      ? `<div class="admin-head"><h1 class="admin-title">${Fmt.esc(unit)}・填名單</h1><button type="button" class="link-btn" data-act="logout">登出</button></div>`
-      : tabs('roster');
-    view.innerHTML = head + '<p class="panel-empty">載入中⋯</p>';
-    bindCommon();
-    let data;
-    try { data = await Api.admin('adminRosterList', isRegion ? {} : { unit }); } catch (err) { return handleError(err); }
-    const regions = editableUnits().filter((u) => u !== window.SITE.fentan);
-    const fields = (ev) => (ev.positions && ev.positions.length ? ev.positions : [{ id: '_', name: '名單', min: null, max: null }]);
-    const need = (p) => [p.min ? `需要 ${p.min} 人` : '', p.max ? `最多 ${p.max} 人` : ''].filter(Boolean).join('、');
-    // 各區報名出席的班：這一區（併區的話兩區同一行）填出席、陪班、備註
-    const attendHtml = (a) => {
-      const lock = a.closed && isRegion ? ' readonly' : '';
-      const ta = (key, label, list) => `<label class="form-row"><span><strong>${label}</strong>：<b data-count="${key}">${list.length}</b> 人</span>
-        <textarea class="input textarea" name="${key}" rows="2"${lock} placeholder="名字之間空一格或用、隔開">${Fmt.esc(list.join('、'))}</textarea></label>
-        <div class="name-preview" data-preview="${key}" aria-live="polite"></div>`;
-      return `
-      <article class="roster-card attend-card${a.id === focusId ? ' is-focus' : ''}" id="roster-${Fmt.esc(a.id)}">
-        <h3>${Fmt.esc(a.name)}<span class="attend-tag">出席名單・${Fmt.esc(a.row)}</span></h3>
-        <p class="card-meta">${Fmt.esc([a.start === a.end ? Fmt.shortDate(a.start) : `${Fmt.shortDate(a.start)} – ${Fmt.shortDate(a.end)}`, Fmt.timeRange(a), a.location].filter(Boolean).join('・'))}</p>
-        ${a.deadline ? `<p class="deadline${a.closed ? ' is-closed' : ''}">${a.closed ? `已經過了截止日期（${md(a.deadline)}）${isRegion ? '，要改名單請找分壇' : '，組長不能再改，總管理者還可以改'}` : `名單 ${Fmt.esc(Fmt.shortDate(a.deadline))} 截止`}</p>` : ''}
-        <form class="attend-fill" data-id="${Fmt.esc(a.id)}" data-row="${Fmt.esc(a.row)}">
-          ${ta('names', '出席', a.data.names || [])}
-          ${ta('escort', '陪班', a.data.escort || [])}
-          ${ta('traffic', '交通', a.data.traffic || [])}
-          <div class="roster-fill-actions"><button type="submit" class="btn btn-primary btn-small"${lock ? ' disabled' : ''}>儲存</button><span class="muted" data-msg></span></div>
-        </form>
-      </article>`;
-    };
-    const evHtml = (ev) => `
-      <article class="roster-card${ev.id === focusId ? ' is-focus' : ''}" id="roster-${Fmt.esc(ev.id)}">
-        <h3>${Fmt.esc(ev.name)}</h3>
-        ${ev.group ? `<p class="card-meta">${Fmt.esc(ev.group)}</p>` : ''}
-        <p class="card-meta">${Fmt.esc([ev.start === ev.end ? Fmt.shortDate(ev.start) : `${Fmt.shortDate(ev.start)} – ${Fmt.shortDate(ev.end)}`, Fmt.timeRange(ev), ev.location].filter(Boolean).join('・'))}</p>
-        ${ev.dress ? `<p class="card-meta">服裝：${Fmt.esc(ev.dress)}</p>` : ''}
-        ${ev.deadline ? `<p class="deadline${ev.closed ? ' is-closed' : ''}">${ev.closed ? `已經過了截止日期（${md(ev.deadline)}）${isRegion ? '，要改名單請找分壇' : '，組長不能再改，總管理者還可以改'}` : `名單 ${Fmt.esc(Fmt.shortDate(ev.deadline))} 截止`}</p>` : ''}
-        ${ev.note ? `<p class="hint">${Fmt.esc(ev.note)}</p>` : ''}
-        ${Fmt.datesBetween(ev.start, ev.end).map((d) => `
-          <div class="roster-date">
-            ${ev.start !== ev.end ? `<p class="roster-day"><strong>${Fmt.esc(Fmt.shortDate(d))}</strong></p>` : ''}
-            ${fields(ev).map((p) => {
-              const names = ((ev.roster || {})[d] || {})[p.id] || [];
-              return `<form class="roster-fill" data-id="${Fmt.esc(ev.id)}" data-date="${d}" data-key="${Fmt.esc(p.id)}" data-max="${p.max || ''}">
-                <label class="form-row"><span><strong>${Fmt.esc(p.name)}</strong>${need(p) ? `（${Fmt.esc(need(p))}）` : ''}：已填 <b data-count>${names.length}</b> 人</span>
-                  <textarea class="input textarea" name="names" rows="2"${ev.closed && isRegion ? ' readonly' : ''} placeholder="名字之間空一格或用、隔開，例：王小明、測試甲">${Fmt.esc(names.join('、'))}</textarea></label>
-                <div class="name-preview" data-preview aria-live="polite"></div>
-                <div class="roster-fill-actions"><button type="submit" class="btn btn-primary btn-small"${ev.closed && isRegion ? ' disabled' : ''}>儲存</button><span class="muted" data-msg></span></div>
-              </form>`;
-            }).join('')}
-          </div>`).join('')}
-      </article>`;
-    // 總管理者選「分壇」：照分壇活動排，每個活動一張；裡面各區（各組）的名單先收起來，要填再打開
-    const isAll = !isRegion && unit === window.SITE.fentan;
-    const filled = (ev) => Object.values(ev.roster || {}).reduce((n, day) => n + Object.values(day).reduce((m, x) => m + x.length, 0), 0);
-    const fold = (summary, inner, open) => `<details class="fill-fold"${open ? ' open' : ''}><summary>${summary}</summary>${inner}</details>`;
-    // 收起來時也看得到名字
-    const namesLine = (text) => (text ? `<span class="fold-names">${Fmt.esc(text)}</span>` : '');
-    const dutyNames = (ev) => [...new Set(Object.values(ev.roster || {}).flatMap((day) => Object.values(day).flat()))].join('、');
-    const dutyFold = (ev) => fold(`<span class="unit-tag">${Fmt.esc((ev.pickKey && ev.pickKey.indexOf('t:') === 0 && Fmt.pickText(ev.pickKey, true)) || ev.group || (ev.units && ev.units.length > 1 ? ev.units.join('、') : ev.unit))}</span> ${Fmt.esc(ev.name.split(/[：:]/)[0])}<span class="fold-count">${filled(ev) ? `已填 ${filled(ev)} 人` : '還沒填'}</span>${namesLine(dutyNames(ev))}`, evHtml(ev), ev.id === focusId);
-    const attendFold = (a) => {
-      const n = (a.data.names || []).length + (a.data.escort || []).length + (a.data.traffic || []).length;
-      const d = a.data;
-      const text = [(d.names || []).join('、'), (d.escort || []).length ? '陪班：' + d.escort.join('、') : '', (d.traffic || []).length ? '交通：' + d.traffic.join('、') : ''].filter(Boolean).join('，');
-      return fold(`<span class="unit-tag">${Fmt.esc(a.row)}</span> 出席名單<span class="fold-count">${n ? `${n} 人` : '還沒填'}</span>${namesLine(text)}`, attendHtml(a), false);
-    };
-    const allHtml = () => {
-      const parents = data.parents || [];
-      const ids = new Set(parents.map((p) => p.id));
-      const blocks = parents.map((p) => {
-        const kids = data.events.filter((e) => e.parentId === p.id);
-        const rows = (data.attend || []).filter((a) => a.id === p.id);
-        const n = kids.reduce((m, e) => m + filled(e), 0) + rows.reduce((m, a) => m + (a.data.names || []).length + (a.data.escort || []).length + (a.data.traffic || []).length, 0);
-        return `<section class="fill-group">
-          <h2 class="fill-group-title">${Fmt.esc(p.name)}<span class="h2-sub">${Fmt.esc(p.start === p.end ? Fmt.shortDate(p.start) : `${Fmt.shortDate(p.start)} – ${Fmt.shortDate(p.end)}`)}・已填 ${n} 人</span></h2>
-          ${rows.length ? `<p class="fill-sub">出席名單</p>${rows.map(attendFold).join('')}` : ''}
-          ${kids.length ? `<p class="fill-sub">分工</p>${kids.map(dutyFold).join('')}` : ''}
-        </section>`;
-      });
-      const others = data.events.filter((e) => !e.parentId || !ids.has(e.parentId));
-      if (others.length) blocks.push(`<section class="fill-group"><h2 class="fill-group-title">其他勤務<span class="h2-sub">沒有排在分壇活動裡的</span></h2>${others.map(dutyFold).join('')}</section>`);
-      return blocks.join('') || '<p class="panel-empty">目前沒有派給各區的勤務，也沒有要報名出席的班</p>';
-    };
-    // 從別區的連結來：這一區的名單裡有那一筆（同一組、併區）就不用提醒
-    if (otherNotice && !(data.events.some((e) => e.id === focusId) || (data.attend || []).some((a) => a.id === focusId))) notice = otherNotice;
-    view.innerHTML = head + (notice ? `<div class="notice notice-error"><p>${Fmt.esc(notice)}</p></div>` : '') + `
-      ${isRegion ? '' : `<label class="form-row"><span>看哪一個</span><select class="input" data-f="unit">${[window.SITE.fentan].concat(regions).map((u) => `<option value="${Fmt.esc(u)}"${u === unit ? ' selected' : ''}>${Fmt.esc(u === window.SITE.fentan ? '分壇（全部，照活動排）' : u)}</option>`).join('')}</select></label>`}
-      ${isAll ? `<p class="hint">照分壇的活動排（7 天前到之後 4 個月）。各區、各組的名單先收起來，要看、要填再按開。</p>${allHtml()}` : `<p class="hint">這裡是分壇派給${Fmt.esc(unit)}的勤務（7 天前到之後 4 個月）。每一欄填會去的人的名字，按「儲存」，大家打開分壇行事曆的活動就看得到。</p>
-      ${(data.attend || []).map(attendHtml).join('')}
-      ${data.events.length ? data.events.map(evHtml).join('') : (data.attend || []).length ? '' : '<p class="panel-empty">目前沒有分壇派給這一區的勤務</p>'}`}`;
-    bindCommon();
-    // 從活動頁來的：捲到那一筆勤務，游標放在第一欄
-    const focusCard = focusId && view.querySelector('.roster-card.is-focus');
-    if (focusCard) {
-      focusCard.scrollIntoView({ block: 'start' });
-      const ta = focusCard.querySelector('textarea');
-      if (ta) ta.focus({ preventScroll: true });
-    }
-    const sel = view.querySelector('[data-f="unit"]');
-    if (sel) sel.addEventListener('change', () => { location.hash = '#/admin/roster/' + encodeURIComponent(sel.value); });
-    // 邊打邊預覽：拆好的名字一個一個顯示（和存檔後一樣），太長、超過人數當場提醒
-    const preview = (f) => { f.querySelector('[data-preview]').innerHTML = previewHtml(f.names.value, Number(f.dataset.max) || 0); };
-    // 名字預覽（填名單、出席名單都用）：拆好的名字一個一個顯示，太長紅色、超過 4 個字黃色
-    function previewHtml(text, max) {
-      const names = Fmt.splitNames(text);
-      const long = names.filter((n) => n.length > 20);
-      const odd = names.filter((n) => n.length > 4 && n.length <= 20);
-      return names.length ? `
-        <span class="name-count">會存成 ${names.length} 人：</span>${names.map((n) => `<span class="name-chip${n.length > 20 ? ' is-bad' : n.length > 4 ? ' is-odd' : ''}">${Fmt.esc(n)}</span>`).join('')}
-        ${long.length ? '<p class="form-error">標紅色的太長了（最多 20 字），是不是兩個名字中間忘了空格或「、」？</p>' : ''}
-        ${odd.length ? `<p class="name-warn">${odd.map((n) => `「${Fmt.esc(n)}」`).join('')}超過 4 個字，確定是一個人的名字嗎？如果是兩個人，中間加空格或「、」。</p>` : ''}
-        ${max && names.length > max ? `<p class="form-error">超過最多 ${max} 人</p>` : ''}` : '';
-    }
-    view.querySelectorAll('.roster-fill').forEach((f) => {
-      preview(f);
-      f.names.addEventListener('input', () => { preview(f); f.querySelector('[data-msg]').textContent = '還沒儲存'; });
-    });
-    view.querySelectorAll('.attend-fill').forEach((f) => {
-      let count = () => ['names', 'escort', 'traffic'].forEach((k) => {
-        f.querySelector(`[data-count="${k}"]`).textContent = Fmt.splitNames(f[k].value).length;
-        f.querySelector(`[data-preview="${k}"]`).innerHTML = previewHtml(f[k].value, 0);
-      });
-      // 同一個人寫在出席、陪班兩邊
-      const both = () => {
-        const seen = Fmt.splitNames(f.names.value);
-        ['escort', 'traffic'].forEach((k) => {
-          const list = Fmt.splitNames(f[k].value);
-          const dup = list.filter((n) => seen.indexOf(n) !== -1);
-          if (dup.length) f.querySelector(`[data-preview="${k}"]`).insertAdjacentHTML('beforeend', `<p class="name-warn">${dup.map((n) => `「${Fmt.esc(n)}」`).join('')}上面已經寫過了，會算兩次，請只留一個地方。</p>`);
-          list.forEach((n) => seen.push(n));
-        });
-      };
-      const count0 = count;
-      count = () => { count0(); both(); };
-      count();
-      f.addEventListener('input', () => { count(); f.querySelector('[data-msg]').textContent = '還沒儲存'; });
-      f.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const msg = f.querySelector('[data-msg]');
-        const odd = Fmt.splitNames(f.names.value + '、' + f.escort.value + '、' + f.traffic.value).filter((n) => n.length > 4 && n.length <= 20);
-        if (odd.length && !window.confirm(`${odd.map((n) => `「${n}」`).join('')}超過 4 個字，確定是一個人的名字嗎？
-
-按「確定」照這樣儲存；按「取消」回去把名字拆開（中間加空格或「、」）。`)) {
-          f.names.focus();
-          return;
-        }
-        msg.textContent = '儲存中⋯';
-        try {
-          const res = await Api.admin('adminAttendSave', { id: f.dataset.id, row: f.dataset.row, names: f.names.value, escort: f.escort.value, traffic: f.traffic.value });
-          const d = Object.assign({ names: [], escort: [], traffic: [] }, (res.event.attend || {})[f.dataset.row] || {});
-          f.names.value = d.names.join('、');
-          f.escort.value = d.escort.join('、');
-          f.traffic.value = d.traffic.join('、');
-          count();
-          msg.textContent = '已儲存';
-          CalendarPage.refresh(true);
-        } catch (x) {
-          if (x.code === 'UNAUTHORIZED' && /登入/.test(x.message)) return renderLogin(x.message);
-          msg.textContent = x.message;
-        }
-      });
-    });
-    view.querySelectorAll('.roster-fill').forEach((f) => f.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const msg = f.querySelector('[data-msg]');
-      const odd = Fmt.splitNames(f.names.value).filter((n) => n.length > 4 && n.length <= 20);
-      if (odd.length && !window.confirm(`${odd.map((n) => `「${n}」`).join('')}超過 4 個字，確定是一個人的名字嗎？\n\n按「確定」照這樣儲存；按「取消」回去把名字拆開（中間加空格或「、」）。`)) {
-        f.names.focus();
-        return;
-      }
-      msg.textContent = '儲存中⋯';
-      try {
-        const res = await Api.admin('adminRosterSave', { id: f.dataset.id, date: f.dataset.date, key: f.dataset.key, names: f.names.value });
-        const names = ((res.event.roster || {})[f.dataset.date] || {})[f.dataset.key] || [];
-        f.names.value = names.join('、');
-        f.querySelector('[data-count]').textContent = names.length;
-        preview(f);
-        msg.textContent = `已儲存（${md(f.dataset.date)}）`;
-        CalendarPage.refresh(true);
-      } catch (x) {
-        if (x.code === 'UNAUTHORIZED' && /登入/.test(x.message)) return renderLogin(x.message);
-        msg.textContent = x.message;
-      }
-    }));
-  }
-
-  // ---------- 活動列表 ----------
-
-  async function loadEvents() {
-    const data = await Api.admin('adminList');
-    events = data.events;
-    units = data.units;
-  }
-
-  async function renderList() {
-    view.innerHTML = tabs('list') + '<p class="panel-empty">載入中⋯</p>';
-    bindCommon();
-    await loadEvents();
-    drawList();
-  }
-
-  function drawList() {
-    const today = CalendarPage.today();
-    const unitOpts = ['全部'].concat(editableUnits());
-    if (unitOpts.indexOf(filter.unit) === -1) filter.unit = '全部';
-    view.innerHTML = tabs('list') + `
-      <div class="admin-actions">
-        <a class="btn btn-primary" href="#/admin/new">＋ 新增活動</a>
-        <button type="button" class="btn" data-act="backup">⬇ 下載備份</button>
-      </div>
-      ${regroupPlan().length ? `<div class="notice"><p>有 ${regroupPlan().length} 筆志工團、烹飪團的勤務還是一區一筆，可以整理成「一組一份名單」。</p><a class="btn btn-small" href="#/admin/regroup">看看要整理哪些</a></div>` : ''}
-      <div class="list-filter">
-        <select class="input" data-f="unit" aria-label="單位">${unitOpts.map((u) => `<option${u === filter.unit ? ' selected' : ''}>${Fmt.esc(u)}</option>`).join('')}</select>
-        <input class="input" type="search" data-f="q" placeholder="搜尋活動名稱、地點" value="${Fmt.esc(filter.q)}">
-      </div>
-      <div class="seg" role="group" aria-label="時間">
-        <button type="button" data-past="0" class="${filter.past ? '' : 'is-active'}">今天起</button>
-        <button type="button" data-past="1" class="${filter.past ? 'is-active' : ''}">已過去的</button>
-      </div>
-      <p class="hint">${Fmt.esc(window.SITE.jiaoquan.unit)}的活動會自動從教全區的系統讀進來，這裡看不到也不用輸入。</p>
-      <div id="admin-list"></div>`;
-    bindCommon();
-    const listBox = view.querySelector('#admin-list');
-    const draw = () => {
-      const q = filter.q.trim();
-      const list = events.filter((e) =>
-        (filter.unit === '全部' || e.unit === filter.unit) &&
-        (filter.past ? e.end < today : e.end >= today) &&
-        (!q || (e.name + ' ' + (e.location || '')).indexOf(q) !== -1));
-      if (filter.past) list.reverse();
-      listBox.innerHTML = list.length
-        ? `<p class="muted">共 ${list.length} 筆</p><ul class="admin-list">${list.map(rowHtml).join('')}</ul>`
-        : `<p class="panel-empty">${filter.past ? '沒有已過去的活動' : '今天起沒有活動'}${q || filter.unit !== '全部' ? '（符合篩選的）' : ''}</p>`;
-    };
-    draw();
-    view.querySelector('[data-f="unit"]').addEventListener('change', (ev) => {
-      filter.unit = ev.target.value;
-      try { localStorage.setItem(UNIT_KEY, filter.unit); } catch (e) { /* 忽略 */ }
-      draw();
-    });
-    view.querySelector('[data-f="q"]').addEventListener('input', (ev) => { filter.q = ev.target.value; draw(); });
-    view.querySelectorAll('[data-past]').forEach((b) => b.addEventListener('click', () => {
-      filter.past = b.dataset.past === '1';
-      view.querySelectorAll('[data-past]').forEach((x) => x.classList.toggle('is-active', x === b));
-      draw();
-    }));
-    view.querySelector('[data-act="backup"]').addEventListener('click', backup);
-    listBox.addEventListener('click', (ev) => {
-      const del = ev.target.closest('[data-del]');
-      if (del) remove(del.dataset.del);
-    });
-  }
-
-  function rowHtml(e) {
-    const when = e.start === e.end ? Fmt.shortDate(e.start) : `${Fmt.shortDate(e.start)} – ${Fmt.shortDate(e.end)}`;
-    const meta = [Fmt.timeRange(e), e.location].filter(Boolean).join('・');
-    const id = encodeURIComponent(e.id);
-    return `
-      <li class="admin-row">
-        <div class="admin-row-main">
-          <span class="admin-row-date">${Fmt.esc(when)}</span>
-          ${Fmt.tagsHtml(e)}${e.unit !== window.SITE.fentan ? `<span class="card-meta">${e.kind === '區活動' ? '區自己的活動（不帶到各區報名系統）' : '分壇分配' + (e.positions && e.positions.length ? '：' + e.positions.map((p) => Fmt.esc(p.name) + (p.max !== null ? ' 最多 ' + p.max : '')).join('、') : '')}</span>` : ''}
-          <strong>${Fmt.esc(e.name)}</strong>
-          ${meta && e.start === e.end ? `<span class="card-meta">${Fmt.esc(meta)}</span>` : e.location ? `<span class="card-meta">${Fmt.esc(e.location)}</span>` : ''}
-        </div>
-        <div class="admin-row-actions">
-          <a class="btn btn-small" href="#/admin/edit/${id}">修改</a>
-          <a class="btn btn-small" href="#/admin/copy/${id}">另存新的</a>
-          <button type="button" class="btn btn-small btn-quiet-danger" data-del="${Fmt.esc(e.id)}">刪除</button>
-        </div>
-      </li>`;
-  }
-
-  async function remove(id) {
-    const ev = events.find((e) => e.id === id);
-    if (!ev) return;
-    const kids = events.filter((e) => e.parentId === id);
-    if (!window.confirm(`確定要刪除「${ev.name}」（${Fmt.shortDate(ev.start)}）嗎？${kids.length ? `\n在這個活動裡排的 ${kids.length} 筆分工（各區勤務和名單）也會一起刪除。` : ''}\n刪除後不能還原。`)) return;
-    busy(true, '刪除中⋯');
-    try {
-      await Api.admin('adminDelete', { id });
-      events = events.filter((e) => e.id !== id && e.parentId !== id);
-      busy(false);
-      CalendarPage.refresh(true);
-      drawList();
-    } catch (err) {
-      busy(false);
-      if (err.code === 'UNAUTHORIZED') return renderLogin(err.message);
-      window.alert(err.message);
-    }
-  }
-
-  async function backup() {
-    busy(true, '準備備份⋯');
-    try {
-      const data = await Api.admin('adminBackup');
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `fentan-calendar-backup-${CalendarPage.today().replace(/-/g, '')}.json`;
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
-      busy(false);
-    } catch (err) {
-      busy(false);
-      if (err.code === 'UNAUTHORIZED') return renderLogin(err.message);
-      window.alert(err.message);
-    }
-  }
-
-  // ---------- 整理成組（以前一區一筆的志工團、烹飪團勤務） ----------
-
-  /** 從說明裡的「志工團第 3、4 組」「烹飪第八組」找出來：同名稱、同日期、同一組的合成一筆 */
-  function regroupPlan() {
-    if (!events) return [];
-    const teams = window.SITE.teams || [];
-    const buckets = new Map();
-    events.forEach((e) => {
-      if (e.unit === window.SITE.fentan || e.kind === '區活動' || e.pickKey) return;
-      const m = (e.note || '').match(/志工團第\s*([\d、]+)\s*組|烹飪(?:團)?第\s*([一二三四五六七八九十\d、]+)\s*組/);
-      if (!m) return;
-      const team = teams.find((t) => t.name === (m[1] ? '志工團' : '烹飪團'));
-      const keys = (m[1] || m[2]).split('、').map((k) => Fmt.normKey(`t:${team.name}:${k}`).split(':')[2]);
-      const groups = keys.map((k) => team.groups.find((g) => g[0] === k)).filter(Boolean);
-      if (!groups.length) return;
-      const id = [e.name, e.start, e.end, team.name, keys.join('、')].join('|');
-      if (!buckets.has(id)) buckets.set(id, { team, keys, groups, list: [] });
-      buckets.get(id).list.push(e);
-    });
-    const order = editableUnits();
-    return [...buckets.values()].map((b) => {
-      const units = [...new Set(b.groups.flatMap((g) => g[1]))].sort((x, y) => order.indexOf(x) - order.indexOf(y));
-      const filled = (e) => Object.values(e.roster || {}).reduce((n, d) => n + Object.values(d).reduce((m, x) => m + x.length, 0), 0);
-      const list = b.list.slice().sort((x, y) => filled(y) - filled(x));
-      const short = units.map((u) => u.replace(/^教|區$/g, '')).join('、');
-      return { keep: list[0], drop: list.slice(1), units, pickKey: `t:${b.team.name}:${b.keys[0]}`,
-        group: `${b.team.name}${b.team.pre}${b.keys.join('、')}${b.team.post}（${short}）` };
-    }).sort((x, y) => x.keep.start.localeCompare(y.keep.start));
-  }
-
-  async function renderRegroup() {
-    view.innerHTML = tabs('') + '<p class="panel-empty">載入中⋯</p>';
-    bindCommon();
-    await loadEvents();
-    const plan = regroupPlan();
-    const today = CalendarPage.today();
-    view.innerHTML = tabs('') + `
-      <h2 class="admin-sub">整理成組</h2>
-      <p class="hint">以前匯入的志工團、烹飪團勤務是一區一筆。整理後同一天、同一組合成一筆，一份名單，組裡各區的組長都能填；已經填的名單會合在一起，不會不見。</p>
-      ${plan.length ? `
-        <ul class="admin-list regroup-list">${plan.map((p) => `
-          <li class="admin-row${p.keep.end < today ? ' is-past' : ''}">
-            <div class="admin-row-main">
-              <span class="admin-row-date">${Fmt.esc(p.keep.start === p.keep.end ? Fmt.shortDate(p.keep.start) : `${Fmt.shortDate(p.keep.start)} – ${Fmt.shortDate(p.keep.end)}`)}</span>
-              <strong>${Fmt.esc(p.keep.name)}</strong>
-              <span class="card-meta">現在：${Fmt.esc([p.keep].concat(p.drop).map((e) => e.unit).join('、'))} ${p.drop.length ? '各一筆' : '一筆'} → 整理後：${Fmt.esc(p.group)} 一筆</span>
-            </div>
-          </li>`).join('')}</ul>
-        <p class="form-error" hidden></p>
-        <button type="button" class="btn btn-primary btn-block" data-act="regroup">全部整理（${plan.length} 筆）</button>`
-        : '<p class="panel-empty">都整理好了，沒有一區一筆的志工團、烹飪團勤務。</p>'}
-      <a class="btn btn-block back-btn" href="#/admin">回活動列表</a>`;
-    bindCommon();
-    const btn = view.querySelector('[data-act="regroup"]');
-    if (!btn) return;
-    btn.addEventListener('click', async () => {
-      if (!window.confirm(`確定要把這 ${plan.length} 筆整理成一組一份名單嗎？`)) return;
-      busy(true, '整理中⋯');
-      try {
-        const items = plan.map((p) => ({ keep: p.keep.id, drop: p.drop.map((e) => e.id), units: p.units, pickKey: p.pickKey, group: p.group }));
-        for (let i = 0; i < items.length; i += 100) await Api.admin('adminRegroup', { items: items.slice(i, i + 100) });
-        busy(false);
-        events = null;
-        CalendarPage.refresh(true);
-        renderRegroup();
-      } catch (err) {
-        busy(false);
-        if (err.code === 'UNAUTHORIZED') return renderLogin(err.message);
-        const box = view.querySelector('.form-error');
-        box.textContent = err.message;
-        box.hidden = false;
-      }
-    });
-  }
-
-  // ---------- 新增／修改／另存新的 ----------
-
-  /** 時間只給整點、半點（05:00～23:30）；原本存的時間不是整點半點的，也列出來 */
-  function timeOptions(value) {
-    const list = [];
-    for (let h = 5; h <= 23; h++) ['00', '30'].forEach((m) => list.push(String(h).padStart(2, '0') + ':' + m));
-    if (value && list.indexOf(value) === -1) { list.push(value); list.sort(); }
-    return '<option value="">不填</option>' + list.map((t) => `<option${t === value ? ' selected' : ''}>${t}</option>`).join('');
-  }
-
-  const newDutyId = () => 'D-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-  // 以前用名稱掛在分壇活動下的各區勤務（規則同 worker/src/logic.js 的 coreName、parentKey）
-  const coreName = (n) => String(n || '').replace(/（[^）]*）|\([^)]*\)/g, '').replace(/第\s*\d+\s*次\s*$/, '').replace(/[\s:：・、,，]/g, '');
-  function legacyChildren(parent) {
-    const key = coreName(String(parent.name || '').split(/[：:]/)[0]);
-    if (key.length < 2) return [];
-    return events.filter((e) => e.unit !== window.SITE.fentan && e.kind !== '區活動' && !e.parentId && e.start <= parent.end && e.end >= parent.start && coreName(e.name).indexOf(key) !== -1);
-  }
-
-  /** 前端先檢查一次（伺服器也會檢查），回傳錯誤清單 */
-  function check(ev) {
-    const errs = [];
-    if (!ev.name) errs.push('請填活動名稱');
-    if (!ev.start) errs.push('請選開始日期');
-    if (ev.end && ev.start && ev.end < ev.start) errs.push('結束日期不能早於開始日期');
-    if (ev.endTime && !ev.startTime) errs.push('有結束時間就要填開始時間');
-    if (ev.link && !/^https:\/\/\S+$/.test(ev.link)) errs.push('相關連結要以 https:// 開頭');
-    if (ev.deadline && ev.deadline > (ev.end || ev.start)) errs.push('截止日期不能晚於活動的最後一天');
-    return errs;
-  }
-
-  // 新增／另存新的：單位可以選「分壇」或勾好幾區（每區各一筆）；修改：一次一筆（規格第 9-2 節）
-  function renderForm(src, mode) {
-    const ev = src ? JSON.parse(JSON.stringify(src)) : { unit: filter.unit !== '全部' ? filter.unit : window.SITE.fentan, category: '勤務', start: CalendarPage.today() };
-    if (mode === 'copy') ev.positions = (ev.positions || []).map((p) => ({ name: p.name, min: p.min, max: p.max }));
-    const multi = mode !== 'edit';
-    const fentan = window.SITE.fentan;
-    // 派給區的勾選不列測試區（已經是測試區的那筆，修改時仍可用單位選單）
-    const regions = editableUnits().filter((u) => u !== fentan && u !== window.SITE.testRegion);
-    const title = mode === 'edit' ? '修改活動' : mode === 'copy' ? '另存成新的活動' : '新增活動';
-    const opt = (list, value, label) => list.map((v) => `<option value="${Fmt.esc(v)}"${v === value ? ' selected' : ''}>${Fmt.esc(label ? label(v) : v)}</option>`).join('');
-    const isRegion = ev.unit && ev.unit !== fentan;
-    const posRow = (p) => `
-      <div class="pos-row">
-        <input type="hidden" name="pid" value="${Fmt.esc(p.id || '')}">
-        <label><span>了愿項目</span><input class="input" name="pname" maxlength="20" value="${Fmt.esc(p.name || '')}" placeholder="例：烹飪"></label>
-        <label><span>最少</span><input class="input" name="pmin" inputmode="numeric" value="${p.min === null || p.min === undefined ? '' : p.min}" placeholder="空白"></label>
-        <label><span>最多</span><input class="input" name="pmax" inputmode="numeric" value="${p.max === null || p.max === undefined ? '' : p.max}" placeholder="不限"></label>
-        <button type="button" class="btn btn-small btn-quiet-danger" data-rm aria-label="拿掉這個項目">✕</button>
-      </div>`;
-    // ---------- 分工（分壇活動用；規格第 9-5 節）：跟出席名單表一樣，固定幾行，按「安排」選 ----------
-    const teams = window.SITE.teams || [];
-    const isFentanEv = !ev.unit || ev.unit === fentan;
-    const findGroup = (pick) => Fmt.findPick(pick);
-    // 原本的分工（duties），加上以前用名稱掛上的各區勤務（照工作名稱合成一行）
-    const myChildren = src && mode !== 'new' && events ? events.filter((e) => e.parentId === src.id) : [];
-    const legacy = src && mode !== 'new' && events && isFentanEv ? legacyChildren(src) : [];
-    const dutySaved = isFentanEv ? (ev.duties || []).map((d) => ({ id: d.id, work: d.work, min: d.min, posId: d.posId, text: d.text || '', picks: Fmt.normPicks(d.picks),
-      kids: myChildren.filter((c) => c.dutyId === d.id), oldGroup: {} })) : [];
-    const byWork = {};
-    legacy.forEach((c) => {
-      const work = (c.name.split(/[：:]/)[0] || c.name).slice(0, 20);
-      const row = byWork[work] || (byWork[work] = { id: newDutyId(), work, min: ((c.positions || [])[0] || {}).min || null, posId: '', text: '', picks: [], kids: [], oldGroup: {} });
-      const pk = c.pickKey ? Fmt.normKey(c.pickKey) : 'u:' + c.unit;
-      if (row.picks.indexOf(pk) === -1) row.picks.push(pk);
-      row.kids.push(c);
-      row.oldGroup[c.unit] = c.group || '';
-    });
-    const dutyAll = dutySaved.concat(Object.values(byWork));
-    // 固定的幾行：有排過就用排過的，沒有就空白；其他工作接在後面
-    let dutyRows = (window.SITE.works || []).map((w) => {
-      const i = dutyAll.findIndex((r) => r.work === w);
-      return i === -1 ? { id: newDutyId(), work: w, min: null, posId: '', text: '', picks: [], kids: [], oldGroup: {}, fixed: true } : Object.assign(dutyAll.splice(i, 1)[0], { fixed: true });
-    }).concat(dutyAll);
-    if (mode === 'copy') dutyRows.forEach((r) => { r.kids = []; r.posId = ''; });
-    const pickChip = (r, val, label, sub) => `<label class="check-chip"><input type="checkbox" data-pick="${Fmt.esc(val)}"${r.picks.indexOf(val) !== -1 ? ' checked' : ''}> <span class="team-no">${Fmt.esc(label)}</span>${sub ? `<small>（${Fmt.esc(sub)}）</small>` : ''}</label>`;
-    const dutyRow = (r) => `
-      <div class="duty-row" data-id="${Fmt.esc(r.id)}" data-pos="${Fmt.esc(r.posId || '')}"${r.fixed ? ' data-fixed="1"' : ''}>
-        <div class="duty-line">
-          ${r.fixed ? `<span class="duty-name">${Fmt.esc(r.work)}</span><input type="hidden" data-f="work" value="${Fmt.esc(r.work)}">`
-            : `<input class="input duty-name-input" data-f="work" maxlength="20" value="${Fmt.esc(r.work || '')}" placeholder="工作名稱" aria-label="工作名稱">`}
-          <div class="duty-sum"></div>
-          <button type="button" class="btn btn-small" data-act="open-duty" aria-expanded="false">安排</button>
-          <button type="button" class="btn btn-small btn-quiet-danger duty-x" data-act="${r.fixed ? 'clear-duty' : 'rm-duty'}" aria-label="${r.fixed ? '清空這行' : '刪掉這行'}" title="${r.fixed ? '清空這行' : '刪掉這行'}">✕</button>
-        </div>
-        <div class="duty-edit" hidden>
-          <p class="team-title">區<span class="muted">（選一區＝那一區一份名單）</span></p>
-          <div class="push-units">${regions.map((u) => pickChip(r, 'u:' + u, u)).join('')}</div>
-          ${teams.map((t) => `<p class="team-title">${Fmt.esc(t.name)}<span class="muted">（選一組＝整組一份名單，組裡各區的組長都能填）</span></p>
-          <div class="push-units team-units">${t.groups.map((g) => pickChip(r, 't:' + t.name + ':' + g[0], t.pre + g[0] + t.post.replace(/（併區）$/, ''), g[1].join('、') + (g[2] ? '・' + g[2] : ''))).join('')}</div>`).join('')}
-          <div class="form-row-pair duty-more">
-            <label><span>每一份需要幾人（可以不填）</span><input class="input" data-f="min" inputmode="numeric" value="${r.min === null || r.min === undefined ? '' : r.min}"></label>
-            <label><span>備註（可以不填，例：本次無上課）</span><input class="input" data-f="text" maxlength="40" value="${Fmt.esc(r.text || '')}"></label>
-          </div>
-          <div class="duty-edit-actions">
-            <button type="button" class="btn btn-small btn-primary" data-act="close-duty">好了</button>
-            <button type="button" class="btn btn-small btn-quiet-danger" data-act="${r.fixed ? 'clear-duty' : 'rm-duty'}">${r.fixed ? '清空這行' : '✕ 拿掉這行'}</button>
-          </div>
-        </div>
-      </div>`;
-    const dutyBlock = `
-        <fieldset class="form-block duty-block">
-          <legend>分工</legend>
-          <p class="hint">跟出席名單表下面那幾行一樣。按「安排」選派給哪幾區、哪幾組；存檔後每一區自動建一筆勤務（「工作：活動名稱」），掛在這個活動下面，各區組長填名單。沒排的行不會建。改了這個活動的日期、地點，各區的勤務會跟著改。</p>
-          <div class="duty-list">${dutyRows.map(dutyRow).join('')}</div>
-          <button type="button" class="btn" data-act="add-duty">＋ 加一行分工</button>
-        </fieldset>`;
-    const unitBlock = multi ? `
-      <label class="radio-row"><input type="radio" name="scope" value="fentan"${isRegion ? '' : ' checked'}> 分壇自己的活動</label>
-      <label class="radio-row"><input type="radio" name="scope" value="regions"${isRegion ? ' checked' : ''}> 派給區（可以選好幾區，每區各一筆）</label>
-      <div class="unit-checks"${isRegion ? '' : ' hidden'}>
-        <div class="check-all"><button type="button" class="btn btn-small" data-act="check-all">全選（${window.SITE.units.length} 區）</button><button type="button" class="btn btn-small" data-act="check-none">全不選</button></div>
-        <div class="push-units">${regions.map((u) => `<label class="check-chip"><input type="checkbox" name="units" value="${Fmt.esc(u)}"${u === ev.unit ? ' checked' : ''}> ${Fmt.esc(u)}</label>`).join('')}</div>
-        ${(window.SITE.teams || []).map((t, ti) => `
-          <p class="team-title">${Fmt.esc(t.name)}<span class="muted">（按一組，會自動選好那幾區）</span></p>
-          <div class="push-units team-units">${t.groups.map((g, gi) => `<label class="check-chip"><input type="checkbox" name="team" data-t="${ti}" data-g="${gi}"> <span class="team-no">${Fmt.esc(t.pre + g[0] + t.post)}</span><small>（${Fmt.esc(g[1].join('、') + (g[2] ? '・' + g[2] : ''))}）</small></label>`).join('')}</div>`).join('')}
-      </div>`
-      : `<label class="form-row"><span>單位</span><select class="input" name="unit">${opt(editableUnits(), ev.unit)}</select></label>
-        <label class="form-row group-row"><span>組別（可以不填，例：志工團第 3 組）</span><input class="input" name="group" maxlength="60" value="${Fmt.esc(ev.group || '')}"></label>`;
-    view.innerHTML = tabs(mode === 'new' ? 'new' : '') + `
-      <form class="admin-form" novalidate>
-        <h2 class="admin-sub">${title}</h2>
-        ${mode === 'copy' ? '<p class="hint">從「' + Fmt.esc(src.name) + '」複製過來，改好日期再存，原本那筆不會變。</p>' : ''}
-        <fieldset class="form-block">
-          <legend>哪一個單位、哪一類</legend>
-          ${unitBlock}
-          ${ev.kind === '區活動' ? '<p class="hint kind-note">這筆是「區自己的活動」（例如範例資料），只記在後台，行事曆上不顯示。</p>' : '<p class="hint kind-note">派給區的是「分壇分配的勤務」，由各區組長在分壇行事曆填名單。</p>'}
-          <label class="form-row"><span>類別</span><select class="input" name="category">${opt(window.SITE.categories, ev.category, Fmt.catLabel)}</select></label>
-        </fieldset>
-        <fieldset class="form-block">
-          <legend>活動</legend>
-          <label class="form-row"><span>活動名稱</span><input class="input" name="name" maxlength="60" required value="${Fmt.esc(ev.name || '')}" placeholder="例：分壇法會"></label>
-          <div class="form-row-pair">
-            <label><span>開始日期</span><input class="input" type="date" name="start" required value="${Fmt.esc(ev.start || '')}"></label>
-            <label><span>結束日期（一天的留空）</span><input class="input" type="date" name="end" value="${ev.end && ev.end !== ev.start ? Fmt.esc(ev.end) : ''}"></label>
-          </div>
-          <div class="form-row-pair">
-            <label><span>開始時間（可以不填）</span><select class="input" name="startTime">${timeOptions(ev.startTime)}</select></label>
-            <label><span>結束時間（可以不填）</span><select class="input" name="endTime">${timeOptions(ev.endTime)}</select></label>
-          </div>
-          <label class="form-row"><span>地點</span><input class="input" name="location" maxlength="60" value="${Fmt.esc(ev.location || '')}"></label>
-          <div class="form-row-pair">
-            <label><span>截止日期（可以不填）</span><input class="input" type="date" name="deadline" value="${Fmt.esc(ev.deadline || '')}"></label>
-            <label><span>服裝（可以不填）</span><input class="input" name="dress" maxlength="60" value="${Fmt.esc(ev.dress || '')}" placeholder="例：白上衣、深色長褲"></label>
-          </div>
-          <label class="check-row signup-row"><input type="checkbox" name="signup"${ev.signup ? ' checked' : ''}> <span>各區報名出席<small class="muted">（各區組長填出席、陪班，活動頁出「出席名單表」）</small></span></label>
-          <p class="hint">截止日期是各區組長填名單的最後一天，過了那天組長就不能改（總管理者還可以改）。分壇活動填了，掛在下面的各區勤務沒填的也照這一天。</p>
-          <label class="form-row"><span>說明（可以不填）</span><textarea class="input textarea" name="note" rows="4" maxlength="1000">${Fmt.esc(ev.note || '')}</textarea></label>
-          <label class="form-row"><span>相關連結（可以不填，要 https:// 開頭）</span><input class="input" type="url" name="link" maxlength="500" value="${Fmt.esc(ev.link || '')}" placeholder="https://"></label>
-        </fieldset>
-        <fieldset class="form-block pos-block">
-          <legend>了愿項目與名額（各區報名用，可以不填）</legend>
-          <p class="hint">不填：各區報名時是一個「參加」、不限人數。「最少」留空：勤務預設 2 人。「最多」留空＝不限，到了就額滿。</p>
-          <div class="pos-list">${(ev.positions || []).map(posRow).join('')}</div>
-          <button type="button" class="btn" data-act="add-pos">＋ 加一個了愿項目</button>
-        </fieldset>
-        ${dutyBlock}
-        <p class="form-error" hidden></p>
-        <button type="submit" class="btn btn-primary btn-block">${mode === 'edit' ? '儲存修改' : '新增'}</button>
-        <a class="btn btn-block back-btn" href="#/admin">取消</a>
-      </form>`;
-    bindCommon();
-    const form = view.querySelector('form');
-    const errBox = form.querySelector('.form-error');
-    const sync = () => {
-      const region = multi ? form.querySelector('[name="scope"]:checked').value === 'regions' : form.unit.value !== fentan;
-      if (multi) form.querySelector('.unit-checks').hidden = !region;
-      else form.querySelector('.group-row').hidden = !region;
-      form.querySelector('.kind-note').hidden = !region;
-      form.querySelector('.pos-block').hidden = !region || ev.kind === '區活動';
-      form.querySelector('.duty-block').hidden = region;
-      form.querySelector('.signup-row').hidden = region;
-    };
-    // 一行分工：派給誰（一區一份；一組或併區整組一份，組裡的區都能填）
-    const rowData = (el) => {
-      const picks = [...el.querySelectorAll('[data-pick]:checked')].map((c) => c.dataset.pick);
-      const order = editableUnits();
-      const targets = picks.map((p) => {
-        if (p.indexOf('u:') === 0) return { key: p, units: [p.slice(2)], group: '' };
-        const fg = findGroup(p);
-        return fg ? { key: p, units: fg.g[1].slice().sort((a, b) => order.indexOf(a) - order.indexOf(b)), group: Fmt.pickText(p, true) } : null;
-      }).filter(Boolean);
-      return { picks, targets, units: targets };
-    };
-    const drawSum = (el) => {
-      const d = rowData(el);
-      const min = el.querySelector('[data-f="min"]').value.trim();
-      const text = el.querySelector('[data-f="text"]').value.trim();
-      const parts = [Fmt.esc(Fmt.dutyText(d.picks)) + (d.units.length && min ? `<small>（每一份 ${Fmt.esc(min)} 人）</small>` : ''), Fmt.esc(text)].filter(Boolean);
-      el.querySelector('.duty-sum').innerHTML = d.units.length || text ? parts.join('，') : '<span class="muted">—</span>';
-    };
-    form.querySelectorAll('.duty-row').forEach(drawSum);
-    form.addEventListener('change', (e) => {
-      const r = e.target.closest('.duty-row');
-      if (!r) return;
-      drawSum(r);
-    });
-    form.addEventListener('input', (e) => { const r = e.target.closest('.duty-row'); if (r) drawSum(r); });
-    const openRow = (row, open) => {
-      row.querySelector('.duty-edit').hidden = !open;
-      row.classList.toggle('is-open', open);
-      row.querySelector('[data-act="open-duty"]').setAttribute('aria-expanded', String(open));
-    };
-    form.addEventListener('click', (e) => {
-      const b = e.target.closest('button');
-      if (!b) return;
-      const row = b.closest('.duty-row');
-      if (b.dataset.act === 'add-duty') {
-        const list = form.querySelector('.duty-list');
-        if (list.children.length >= 20) return;
-        list.insertAdjacentHTML('beforeend', dutyRow({ id: newDutyId(), work: '', min: null, posId: '', text: '', picks: [], kids: [], oldGroup: {} }));
-        const added = list.lastElementChild;
-        drawSum(added);
-        openRow(added, true);
-        added.querySelector('[data-f="work"]').focus();
-      }
-      if (b.dataset.act === 'open-duty') openRow(row, row.querySelector('.duty-edit').hidden);
-      if (b.dataset.act === 'close-duty') { openRow(row, false); row.scrollIntoView({ block: 'nearest' }); }
-      if (b.dataset.act === 'rm-duty') row.remove();
-      if (b.dataset.act === 'clear-duty') {
-        row.querySelectorAll('[data-pick]').forEach((c) => { c.checked = false; });
-        row.querySelector('[data-f="min"]').value = '';
-        row.querySelector('[data-f="text"]').value = '';
-        drawSum(row);
-      }
-    });
-    sync();
-    form.addEventListener('change', sync);
-    // 勾組＝勾那幾區；取消組＝取消那幾區（別的組還要的區留著）
-    const teamUnits = (c) => window.SITE.teams[c.dataset.t].groups[c.dataset.g][1];
-    form.addEventListener('change', (e) => {
-      const c = e.target.closest('[name="team"]');
-      if (!c) return;
-      const still = new Set([...form.querySelectorAll('[name="team"]:checked')].flatMap(teamUnits));
-      teamUnits(c).forEach((u) => {
-        const box = form.querySelector(`[name="units"][value="${u}"]`);
-        if (box) box.checked = c.checked || still.has(u);
-      });
-    });
-    form.addEventListener('click', (e) => {
-      const b = e.target.closest('button');
-      if (!b) return;
-      if (b.dataset.act === 'add-pos') {
-        const list = form.querySelector('.pos-list');
-        if (list.children.length < 10) list.insertAdjacentHTML('beforeend', posRow({}));
-      }
-      if (b.hasAttribute('data-rm')) b.closest('.pos-row').remove();
-      // 全選＝16 區（測試區不算）；全不選＝全部取消
-      if (b.dataset.act === 'check-all' || b.dataset.act === 'check-none') {
-        form.querySelectorAll('[name="units"]').forEach((c) => { c.checked = b.dataset.act === 'check-all'; });
-        if (b.dataset.act === 'check-none') form.querySelectorAll('[name="team"]').forEach((c) => { c.checked = false; });
-      }
-    });
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const f = new FormData(form);
-      const data = {};
-      ['category', 'name', 'group', 'start', 'end', 'startTime', 'endTime', 'location', 'dress', 'deadline', 'note', 'link'].forEach((k) => { data[k] = String(f.get(k) || '').trim(); });
-      if (!data.end) data.end = data.start;
-      const errs = [];
-      if (multi) {
-        if (f.get('scope') === 'regions') {
-          data.units = f.getAll('units').map(String);
-          if (!data.units.length) errs.push('請勾選要派給哪幾區');
-          // 每區的組別：勾了哪幾組（例：教美區 → 志工團第 3、4、13 組）
-          const picked = {};
-          form.querySelectorAll('[name="team"]:checked').forEach((c) => {
-            const t = window.SITE.teams[c.dataset.t];
-            const g = t.groups[c.dataset.g];
-            g[1].forEach((u) => { ((picked[u] ||= {})[c.dataset.t] ||= []).push(g[0]); });
-          });
-          data.groupOf = {};
-          data.units.forEach((u) => {
-            const byTeam = picked[u] || {};
-            data.groupOf[u] = Object.keys(byTeam).map((ti) => { const t = window.SITE.teams[ti]; return (t.label !== undefined ? t.label : t.name) + t.pre + byTeam[ti].join('、') + t.post; }).join('、');
-          });
-          data.unit = data.units[0] || '';
-        } else data.unit = fentan;
-      } else data.unit = String(f.get('unit'));
-      if (data.unit !== fentan) {
-        data.kind = ev.kind === '區活動' ? '區活動' : '分壇分配'; // 後台派給區的一律是分壇分配；範例資料（區活動）修改時維持原樣
-        data.positions = data.kind === '分壇分配' ? [...form.querySelectorAll('.pos-row')].map((r) => ({
-          id: r.querySelector('[name="pid"]').value || undefined,
-          name: r.querySelector('[name="pname"]').value.trim(),
-          min: r.querySelector('[name="pmin"]').value.trim(),
-          max: r.querySelector('[name="pmax"]').value.trim()
-        })) : [];
-      }
-      // 分壇活動：分工（每一項、每一區一筆）
-      let lost = [];
-      if (data.unit === fentan) data.signup = !!form.signup.checked;
-      if (data.unit === fentan) {
-        data.duties = [];
-        data.assign = [];
-        const sent = new Set();
-        form.querySelectorAll('.duty-row').forEach((el, i) => {
-          const old = dutyRows.find((r) => r.id === el.dataset.id) || { kids: [], oldGroup: {} };
-          const work = el.querySelector('[data-f="work"]').value.trim();
-          const text = el.querySelector('[data-f="text"]').value.trim();
-          const d = rowData(el);
-          if (!d.units.length && !text) return; // 沒排的行：略過
-          if (!work) { errs.push(`第 ${i + 1} 行分工沒有填工作名稱`); return; }
-          data.duties.push({ id: el.dataset.id, work, picks: d.picks, min: el.querySelector('[data-f="min"]').value.trim(), text, posId: el.dataset.pos || undefined });
-          const free = old.kids.filter((c) => !sent.has(c.id));
-          const keyOf = (c) => (c.pickKey ? Fmt.normKey(c.pickKey) : 'u:' + c.unit);
-          // 先對同一個派給對象的，再對組裡有的區（舊資料一區一筆）
-          d.targets.forEach((t) => {
-            const hit = free.find((c) => !sent.has(c.id) && keyOf(c) === t.key) || free.find((c) => !sent.has(c.id) && !c.pickKey && t.units.indexOf(c.unit) !== -1 && t.key.indexOf('t:') === 0);
-            if (hit) sent.add(hit.id);
-            data.assign.push({ id: hit ? hit.id : undefined, unit: t.units[0], units: t.units, key: t.key, dutyId: el.dataset.id, group: t.group || old.oldGroup[t.units[0]] || '' });
-          });
-        });
-        if (mode === 'edit') {
-          const gone = myChildren.concat(legacy).filter((c) => !sent.has(c.id));
-          data.drop = legacy.filter((c) => !sent.has(c.id)).map((c) => c.id);
-          lost = gone.filter((c) => Object.values(c.roster || {}).some((day) => Object.values(day).some((n) => n.length)));
-        }
-      }
-      if (mode === 'edit') data.id = src.id;
-      errs.push(...check(data));
-      if (errs.length) {
-        errBox.textContent = errs.join('；');
-        errBox.hidden = false;
-        errBox.scrollIntoView({ block: 'center' });
-        return;
-      }
-      errBox.hidden = true;
-      if (lost.length && !window.confirm(`拿掉的這幾區，組長已經填了名單，存檔後名單會一起刪掉：\n${lost.map((c) => `・${c.unit} ${c.name}`).join('\n')}\n\n確定要存檔嗎？`)) return;
-      busy(true, '儲存中⋯');
-      try {
-        const res = await Api.admin('adminSave', { event: data });
-        if (res.children) events = null; // 各區勤務也變了：回列表時重新讀
-        busy(false);
-        const saved = res.events || [res.event];
-        if (events) {
-          const ids = new Set(saved.map((x) => x.id));
-          events = events.filter((x) => !ids.has(x.id)).concat(saved)
-            .sort((a, b) => a.start.localeCompare(b.start) || (a.startTime || '').localeCompare(b.startTime || ''));
-        }
-        CalendarPage.refresh(true);
-        location.hash = '#/admin';
-      } catch (err) {
-        busy(false);
-        if (err.code === 'UNAUTHORIZED') return renderLogin(err.message);
-        errBox.textContent = err.message;
-        errBox.hidden = false;
-      }
-    });
-  }
-
-  function renderMissing() {
-    view.innerHTML = tabs('') + '<div class="notice notice-error"><p>找不到這筆活動，可能已經被刪除。</p></div><a class="btn" href="#/admin">回活動列表</a>';
-    bindCommon();
-  }
-
-  // ---------- 批次匯入 ----------
-  // 匯入檔由 Claude 整理（JSON：{ title, events: [{ unit, category, name, start, end, startTime, endTime, location, note, link }] }），
-  // 管理者上傳 → 預覽（有錯標紅、和現有重複的會跳過）→ 匯入。同一次匯入是一批，可以整批刪除。
-
-  const dupKey = (e) => [e.unit, e.name, e.start, e.startTime || ''].join('|');
-  const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-  const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
-
-  /** 匯入的一筆：整理欄位並檢查（和伺服器同樣的規則，伺服器還會再檢查一次） */
-  function checkImportRow(raw) {
-    const v = (k) => (raw && raw[k] !== undefined && raw[k] !== null ? String(raw[k]).trim() : '');
-    const ev = { unit: v('unit'), category: v('category'), name: v('name'), start: v('start'), end: v('end') || v('start'), startTime: v('startTime'), endTime: v('endTime'), location: v('location'), dress: v('dress'), deadline: v('deadline'), note: v('note'), link: v('link'), kind: v('kind'), positions: Array.isArray(raw && raw.positions) ? raw.positions : [] };
-    const errs = [];
-    if (ev.unit === window.SITE.jiaoquan.unit && ev.kind === '區活動') errs.push('教全區自己的活動會自動讀進來，不用匯入');
-    else if (editableUnits().indexOf(ev.unit) === -1) errs.push('單位不對');
-    if (window.SITE.categories.indexOf(ev.category) === -1) errs.push('類別要是勤務、道務、教育');
-    if (!ev.name) errs.push('沒有名稱');
-    if (!DATE_RE.test(ev.start)) errs.push('開始日期格式不對');
-    if (!DATE_RE.test(ev.end)) errs.push('結束日期格式不對');
-    else if (ev.end < ev.start) errs.push('結束日期早於開始日期');
-    if (ev.startTime && !TIME_RE.test(ev.startTime)) errs.push('開始時間格式不對');
-    if (ev.endTime && !TIME_RE.test(ev.endTime)) errs.push('結束時間格式不對');
-    if (ev.endTime && !ev.startTime) errs.push('有結束時間卻沒有開始時間');
-    if (ev.link && !/^https:\/\/\S+$/.test(ev.link)) errs.push('連結要 https:// 開頭');
-    if (ev.deadline && !DATE_RE.test(ev.deadline)) errs.push('截止日期格式不對');
-    if (ev.name.length > 60) errs.push('名稱超過 60 字');
-    return { ev, errs };
-  }
-
-  async function renderImport() {
-    view.innerHTML = tabs('import') + '<p class="panel-empty">載入中⋯</p>';
-    bindCommon();
-    await loadEvents();
-    view.innerHTML = tabs('import') + `
-      <h2 class="admin-sub">批次匯入</h2>
-      <p class="hint">選 Claude 整理好的匯入檔（.json），先預覽，確認沒問題再匯入。同一次匯入算「一批」，匯錯了可以在下面整批刪除。</p>
-      <label class="btn btn-primary btn-block import-pick">📂 選匯入檔<input type="file" accept=".json,application/json" hidden></label>
-      <div id="import-preview"></div>
-      <h2 class="admin-sub import-batches-title">最近匯入的批次</h2>
-      <div id="import-batches"></div>`;
-    bindCommon();
-    view.querySelector('.import-pick input').addEventListener('change', async (e) => {
-      const file = e.target.files[0];
-      e.target.value = '';
-      if (!file) return;
-      let data;
-      try {
-        data = JSON.parse(await file.text());
-      } catch (err) {
-        showPreviewError('這個檔案打不開（不是正確的匯入檔）');
-        return;
-      }
-      const rows = Array.isArray(data) ? data : data && Array.isArray(data.events) ? data.events : null;
-      if (!rows || !rows.length) return showPreviewError('匯入檔裡沒有活動');
-      drawPreview(file.name, (data && data.title) || '', rows);
-    });
-    drawBatches();
-  }
-
-  function showPreviewError(msg) {
-    view.querySelector('#import-preview').innerHTML = `<p class="form-error">${Fmt.esc(msg)}</p>`;
-  }
-
-  function drawPreview(fileName, title, rows) {
-    const box = view.querySelector('#import-preview');
-    const existing = new Set(events.map(dupKey));
-    const seen = new Set();
-    const items = rows.map((raw) => {
-      const r = checkImportRow(raw);
-      const key = dupKey(r.ev);
-      r.dup = !r.errs.length && (existing.has(key) || seen.has(key));
-      seen.add(key);
-      return r;
-    });
-    const bad = items.filter((r) => r.errs.length).length;
-    const dup = items.filter((r) => r.dup).length;
-    const ok = items.length - bad - dup;
-    const row = (r, i) => {
-      const e = r.ev;
-      const when = DATE_RE.test(e.start) ? (e.start === e.end || !DATE_RE.test(e.end) ? Fmt.shortDate(e.start) : `${Fmt.shortDate(e.start)} – ${Fmt.shortDate(e.end)}`) : e.start;
-      const meta = [e.startTime ? Fmt.timeRange(e) : '', e.location].filter(Boolean).join('・');
-      const state = r.errs.length ? `<span class="imp-state is-bad">✗ ${Fmt.esc(r.errs.join('、'))}</span>`
-        : r.dup ? '<span class="imp-state is-dup">已經有了，會跳過</span>' : '<span class="imp-state is-ok">✓</span>';
-      return `<li class="imp-row${r.errs.length ? ' is-bad' : r.dup ? ' is-dup' : ''}">
-          <span class="imp-n">${i + 1}</span>
-          <div class="imp-main"><span class="admin-row-date">${Fmt.esc(when)}</span>
-            <span><span class="unit-tag">${Fmt.esc(e.unit || '（沒有單位）')}</span> <strong>${Fmt.esc(e.name || '（沒有名稱）')}</strong></span>
-            ${meta ? `<span class="card-meta">${Fmt.esc(meta)}</span>` : ''}
-            ${state}</div></li>`;
-    };
-    box.innerHTML = `
-      <div class="import-summary">
-        <p><strong>${Fmt.esc(title || fileName)}</strong>（共 ${items.length} 筆）</p>
-        <p>可以匯入 <strong>${ok}</strong> 筆${dup ? `，重複 ${dup} 筆會跳過` : ''}${bad ? `，<span class="imp-bad-text">有錯 ${bad} 筆</span>` : ''}</p>
-        ${bad ? '<p class="imp-bad-text">有錯的要先改好才能匯入，請把錯誤告訴 Claude 重新整理。</p>' : !ok ? '<p>沒有新的活動要匯入（都已經匯入過了）。</p>' : ''}
-      </div>
-      <ol class="imp-list">${items.map(row).join('')}</ol>
-      ${!bad && ok ? `<button type="button" class="btn btn-primary btn-block" data-act="do-import">匯入 ${ok} 筆</button>` : ''}`;
-    const btn = box.querySelector('[data-act="do-import"]');
-    if (btn) btn.addEventListener('click', async () => {
-      busy(true, `匯入 ${ok} 筆⋯`);
-      try {
-        const res = await Api.admin('adminImport', { events: items.filter((r) => !r.dup).map((r) => r.ev) });
-        busy(false);
-        await loadEvents();
-        CalendarPage.refresh(true);
-        box.innerHTML = `<div class="notice notice-success"><p><strong>已匯入 ${res.added} 筆</strong>${res.skipped ? `（重複 ${res.skipped} 筆跳過）` : ''}</p><p>家人們大約 1 分鐘內看得到。</p></div>`;
-        drawBatches();
-      } catch (err) {
-        busy(false);
-        if (err.code === 'UNAUTHORIZED') return renderLogin(err.message);
-        showPreviewError(err.message);
-      }
-    });
-    box.scrollIntoView({ block: 'start', behavior: 'smooth' });
-  }
-
-  function drawBatches() {
-    const box = view.querySelector('#import-batches');
-    const groups = new Map();
-    events.forEach((e) => {
-      if (!e.batch) return;
-      if (!groups.has(e.batch)) groups.set(e.batch, []);
-      groups.get(e.batch).push(e);
-    });
-    const list = [...groups.entries()].sort((a, b) => b[0].localeCompare(a[0])).slice(0, 20);
-    if (!list.length) {
-      box.innerHTML = '<p class="panel-empty">還沒有匯入過</p>';
-      return;
-    }
-    box.innerHTML = `<ul class="admin-list">${list.map(([batch, evs]) => {
-      const order = editableUnits();
-      const units = [...new Set(evs.map((e) => e.unit))].sort((a, b) => order.indexOf(a) - order.indexOf(b));
-      const starts = evs.map((e) => e.start).sort();
-      const at = evs.map((e) => e.createdAt).sort()[0] || '';
-      return `<li class="admin-row">
-          <div class="admin-row-main">
-            <span class="admin-row-date">${Fmt.esc(at.slice(0, 16))} 匯入</span>
-            <strong>${evs.length} 筆：${Fmt.esc(units.slice(0, 6).join('、'))}${units.length > 6 ? ` 等 ${units.length} 個單位` : ''}</strong>
-            <span class="card-meta">${Fmt.esc(Fmt.shortDate(starts[0]))} – ${Fmt.esc(Fmt.shortDate(starts[starts.length - 1]))}</span>
-          </div>
-          <div class="admin-row-actions"><button type="button" class="btn btn-small btn-quiet-danger" data-batch="${Fmt.esc(batch)}" data-n="${evs.length}">刪除這批（${evs.length} 筆）</button></div>
-        </li>`;
-    }).join('')}</ul>`;
-    box.querySelectorAll('[data-batch]').forEach((b) => b.addEventListener('click', async () => {
-      if (!window.confirm(`確定要刪除這一批的 ${b.dataset.n} 筆活動嗎？\n（匯入後修改過的也會一起刪除，不能還原）`)) return;
-      busy(true, '刪除中⋯');
-      try {
-        await Api.admin('adminDeleteBatch', { batch: b.dataset.batch });
-        busy(false);
-        await loadEvents();
-        CalendarPage.refresh(true);
-        drawBatches();
-      } catch (err) {
-        busy(false);
-        if (err.code === 'UNAUTHORIZED') return renderLogin(err.message);
-        window.alert(err.message);
-      }
-    }));
-  }
-
-  // ---------- 發通知（手機提醒，規格第 10-1 節） ----------
+  // ---------- 發通知（手機提醒，規格第 10 節） ----------
 
   const pad = (n) => String(n).padStart(2, '0');
   function localInput(ms) {
@@ -1113,7 +644,7 @@
     const d = new Date(ms);
     return `${d.getMonth() + 1}/${d.getDate()}（${'日一二三四五六'[d.getDay()]}）${pad(d.getHours())}:${pad(d.getMinutes())}`;
   }
-  const unitName = (u) => (u === window.SITE.fentan ? '分壇' : u);
+  const unitName = (u) => (u === window.SITE.fentan ? '不分區' : u);
   const targetText = (t) => (t === 'all' ? '全部' : t.map(unitName).join('、'));
 
   async function renderPush() {
@@ -1126,19 +657,18 @@
     const opened = units.filter((u) => counts[u]).map((u) => `${Fmt.esc(unitName(u))} ${counts[u]}`).join('、');
     view.innerHTML = tabs('push') + `
       <h2 class="admin-sub">發通知到家人的手機</h2>
-      <p class="hint">只會送到有開啟「🔔 手機提醒」的手機。目前共 <strong>${total}</strong> 支${opened ? '：' + opened : '，還沒有人開啟'}。每天早上 7 點、晚上 8 點的活動提醒是自動送的，不用在這裡發。</p>
+      <p class="hint">只會送到有開啟「🔔 手機提醒」的手機。目前共 <strong>${total}</strong> 支${opened ? '：' + opened : '，還沒有人開啟'}。每天早上 7 點、晚上 8 點的上課提醒是自動送的，不用在這裡發。</p>
       <form class="admin-form" novalidate>
         <fieldset class="form-block">
           <legend>內容</legend>
-          <label class="form-row"><span>標題（最多 40 字）</span><input class="input" name="title" maxlength="40" placeholder="例：統班改地點"></label>
-          <label class="form-row"><span>內容（最多 200 字）</span><textarea class="input textarea" name="body" rows="3" maxlength="200" placeholder="例：這週日的統班改在彌勒山，時間不變 🙏"></textarea></label>
+          <label class="form-row"><span>標題（最多 40 字）</span><input class="input" name="title" maxlength="40" placeholder="例：高大班改地點"></label>
+          <label class="form-row"><span>內容（最多 200 字）</span><textarea class="input textarea" name="body" rows="3" maxlength="200" placeholder="例：這週六的高大班改在分壇教室，時間不變 🙏"></textarea></label>
         </fieldset>
         <fieldset class="form-block">
           <legend>發給誰</legend>
           <label class="radio-row"><input type="radio" name="who" value="all" checked> 全部（${total} 支）</label>
-          <label class="radio-row"><input type="radio" name="who" value="pick"> 選單位</label>
+          <label class="radio-row"><input type="radio" name="who" value="pick"> 選區</label>
           <div class="push-units" hidden>${units.map((u) => `<label class="check-chip"><input type="checkbox" name="unit" value="${Fmt.esc(u)}"> ${Fmt.esc(unitName(u))}<small>${counts[u] || 0}</small></label>`).join('')}</div>
-          <p class="hint">「分壇」是送給選分壇的手機；某一區是送給選那一區的手機。</p>
         </fieldset>
         <fieldset class="form-block">
           <legend>什麼時候發</legend>
@@ -1149,7 +679,7 @@
         <p class="form-error" hidden></p>
         <button type="submit" class="btn btn-primary btn-block">發出通知</button>
       </form>
-      <h2 class="admin-sub import-batches-title">最近發的通知</h2>
+      <h2 class="admin-sub">最近發的通知</h2>
       <div id="push-list"></div>`;
     bindCommon();
     const form = view.querySelector('form');
@@ -1170,7 +700,7 @@
       const errs = [];
       if (!title) errs.push('請填標題');
       if (!body) errs.push('請填內容');
-      if (target !== 'all' && !target.length) errs.push('請勾選要發給哪些單位');
+      if (target !== 'all' && !target.length) errs.push('請勾選要發給哪些區');
       if (later && !(sendAt > Date.now())) errs.push('請選排定的時間');
       if (errs.length) { errBox.textContent = errs.join('；'); errBox.hidden = false; return; }
       errBox.hidden = true;
@@ -1183,7 +713,7 @@
         renderPush();
       } catch (err) {
         busy(false);
-        if (err.code === 'UNAUTHORIZED') return renderLogin(err.message);
+        if (err.code === 'UNAUTHORIZED' && /登入/.test(err.message)) return renderLogin(err.message);
         errBox.textContent = err.message;
         errBox.hidden = false;
       }
@@ -1206,15 +736,7 @@
     box.querySelectorAll('[data-cancel]').forEach((b) => b.addEventListener('click', async () => {
       if (!window.confirm('確定要取消這則排定的通知嗎？')) return;
       busy(true, '取消中⋯');
-      try {
-        await Api.admin('adminPushCancel', { id: b.dataset.cancel });
-        busy(false);
-        renderPush();
-      } catch (err) {
-        busy(false);
-        if (err.code === 'UNAUTHORIZED') return renderLogin(err.message);
-        window.alert(err.message);
-      }
+      try { await Api.admin('adminPushCancel', { id: b.dataset.cancel }); busy(false); renderPush(); } catch (err) { busy(false); handleError(err); }
     }));
   }
 
@@ -1223,13 +745,14 @@
   async function renderLog() {
     view.innerHTML = tabs('log') + '<p class="panel-empty">載入中⋯</p>';
     bindCommon();
-    const data = await Api.admin('adminLog');
-    const rows = data.log.map((l) => `
+    const d = await Api.admin('adminLog');
+    const when = (l) => (!l.start ? '' : `（${l.start === l.end || !l.end ? Fmt.shortDate(l.start) : Fmt.shortDate(l.start) + ' – ' + Fmt.shortDate(l.end)}）`);
+    const rows = d.log.map((l) => `
       <li class="log-item">
         <div class="log-head"><strong>${Fmt.esc(l.action)}</strong><span class="muted">${Fmt.esc(l.time)}</span></div>
-        <div>${Fmt.esc(l.unit)}・${Fmt.esc(l.name)}（${Fmt.esc(l.start === l.end ? Fmt.shortDate(l.start) : Fmt.shortDate(l.start) + ' – ' + Fmt.shortDate(l.end))}）</div>
+        <div>${Fmt.esc(l.unit || '')}${l.unit ? '・' : ''}${Fmt.esc(l.name || '')}${Fmt.esc(when(l))}</div>
       </li>`).join('');
-    view.innerHTML = tabs('log') + (rows ? `<p class="muted">最近 ${data.log.length} 筆</p><ul class="log-list">${rows}</ul>` : '<p class="panel-empty">還沒有操作紀錄</p>');
+    view.innerHTML = tabs('log') + (rows ? `<p class="muted">最近 ${d.log.length} 筆</p><ul class="log-list">${rows}</ul>` : '<p class="panel-empty">還沒有操作紀錄</p>');
     bindCommon();
   }
 

@@ -1,7 +1,7 @@
 // 手機提醒在 Durable Object 裡的部分：訂閱、收件匣、管理者發的通知、每日提醒、分批送出（規格第 10-1 節）。
 // 送出流程：工作（job）放進 jobs 表 → alarm 每次送一批（40 支）→ 還有就再排下一次 alarm，直到送完。
 import { SITE } from './site.js';
-import { AppError, fromJiaoquan, inRange, taipeiDate, taipeiStamp } from './logic.js';
+import { AppError, taipeiDate, taipeiStamp } from './logic.js';
 import { dailyContent, eventsForUnit, generateVapidKeys, pushIdOf, sendEmptyPush, validEndpoint } from './push.js';
 
 export const BATCH = 40; // 一批送幾支（Cloudflare 免費方案一次執行最多對外連 50 次）
@@ -33,7 +33,7 @@ function randomHex(bytes) {
  * @param opts.now () => 毫秒
  * @param opts.fetch 對外連線（送推播、讀教全區）
  * @param opts.setAlarm (ms) => void（Durable Object 的 alarm；測試用假的）
- * @param opts.localEvents () => 手動活動（家人們看的欄位）
+ * @param opts.classesOn (date) => 那一天有上課的班（每日提醒用；規格第 10 節）
  * @param opts.log (action, entry) => void 寫操作紀錄
  */
 export function createPushApp(store, opts) {
@@ -110,7 +110,7 @@ export function createPushApp(store, opts) {
       if (now() - (sub.lastTest || 0) < TEST_WAIT_MS) throw new AppError('BUSY', '剛剛才傳過，請等 30 秒再試');
       sub.lastTest = now();
       store.putSub(sub);
-      store.addInbox(id, { title: '🔔 測試通知', body: `已經可以收到${SITE.name}的提醒了 😊\n（${sub.unit === SITE.fentan ? '分壇' : sub.unit + '＋分壇'}的活動）`, url: '#/' }, now() + INBOX_TTL_MS);
+      store.addInbox(id, { title: '🔔 測試通知', body: `已經可以收到${SITE.name}的提醒了 😊\n（教育組的課）`, url: '#/' }, now() + INBOX_TTL_MS);
       const [res] = await sendEmptyPush(fetchFn, await keys(), [sub], Math.floor(now() / 1000));
       if (res.gone) {
         store.deleteSub(id);
@@ -175,22 +175,10 @@ export function createPushApp(store, opts) {
 
   // ---------- 每日提醒（cron 觸發） ----------
 
-  async function jiaoquanOn(date) {
-    try {
-      const url = SITE.jiaoquan.api + '?' + new URLSearchParams({ action: 'getEvents', from: date, to: date });
-      const res = await fetchFn(url, {});
-      const body = await res.json();
-      return body && body.ok ? fromJiaoquan(body.data) : [];
-    } catch (e) {
-      return []; // 讀不到教全區：其他單位照常提醒
-    }
-  }
-
   /** when：'today'（早上 7 點）| 'tomorrow'（晚上 8 點） */
   async function enqueueDaily(when) {
     const date = taipeiDate(now() + (when === 'tomorrow' ? 86400e3 : 0));
-    const local = inRange(opts.localEvents(), date, date);
-    const all = local.concat(inRange(await jiaoquanOn(date), date, date));
+    const all = opts.classesOn(date);
     const contents = {};
     ALL_UNITS.forEach((u) => {
       const c = dailyContent(eventsForUnit(all, u), when, date);

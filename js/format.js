@@ -1,4 +1,4 @@
-// 日期、時間、標籤的顯示格式，以及共用小工具。（日期函式沿用教全區的 js/format.js）
+// 日期、時間的顯示格式，以及共用小工具。
 (function () {
   'use strict';
 
@@ -30,16 +30,6 @@
     return toDateStr(d);
   }
 
-  function datesBetween(start, end) {
-    const out = [];
-    for (let s = start; s <= end; s = addDays(s, 1)) out.push(s);
-    return out;
-  }
-
-  function rocYear(s) {
-    return Number(s.slice(0, 4)) - 1911;
-  }
-
   function weekday(s) {
     return WEEKDAYS[parseDate(s).getDay()];
   }
@@ -49,67 +39,23 @@
     return `${Number(s.slice(5, 7))}/${Number(s.slice(8, 10))}（${weekday(s)}）`;
   }
 
+  /** '2026-10-10' → '10/10' */
+  function md(s) {
+    return `${Number(s.slice(5, 7))}/${Number(s.slice(8, 10))}`;
+  }
+
   /** '2026-10-10' → '115/10/10（六）' */
   function rocDate(s) {
-    return `${rocYear(s)}/${shortDate(s)}`;
+    return `${Number(s.slice(0, 4)) - 1911}/${shortDate(s)}`;
   }
 
-  /** 類別標籤上的字：勤務寫「總務・勤務」，道務、教育照原樣 */
-  function catLabel(category) {
-    const labels = (window.SITE && window.SITE.categoryLabels) || {};
-    return labels[category] || category || '';
+  /** '09:00'、'09:00 – 12:00'、'' */
+  function timeRange(o) {
+    if (!o.startTime) return '';
+    return o.endTime ? `${o.startTime} – ${o.endTime}` : o.startTime;
   }
 
-  /** 活動的時間文字；跨日顯示起訖日期，結束早於開始顯示「隔天」 */
-  function timeRange(ev) {
-    const { start, end, startTime, endTime } = ev;
-    const md = (s) => `${Number(s.slice(5, 7))}/${Number(s.slice(8, 10))}`;
-    if (start !== end) {
-      const a = md(start) + (startTime ? ' ' + startTime : '');
-      const b = md(end) + (endTime ? ' ' + endTime : '');
-      return `${a} – ${b}`;
-    }
-    if (startTime && endTime) {
-      return endTime <= startTime ? `${startTime} – 隔天 ${endTime}` : `${startTime} – ${endTime}`;
-    }
-    return startTime || '';
-  }
-
-  /**
-   * 卡片上某一天的時間（精簡版）。
-   * 單日：同 timeRange；多天：「第 3／8 天」，第一天加「14:00 起」、最後一天加「至 14:00」。
-   */
-  function cardTime(ev, date) {
-    if (ev.start === ev.end) return timeRange(ev);
-    const total = datesBetween(ev.start, ev.end).length;
-    const n = datesBetween(ev.start, date).length;
-    let text = `第 ${n}／${total} 天`;
-    if (date === ev.start && ev.startTime) text += ` ${ev.startTime} 起`;
-    if (date === ev.end && ev.endTime) text += ` 至 ${ev.endTime}`;
-    return text;
-  }
-
-  /** 單位與類別的小標籤 */
-  function tagsHtml(ev) {
-    const isFentan = ev.unit === window.SITE.fentan;
-    return `<span class="tags"><span class="unit-tag${isFentan ? ' is-fentan' : ''}">${esc(ev.unit)}</span>` +
-      `<span class="cat-tag cat-${esc(ev.category)}">${esc(catLabel(ev.category))}</span></span>`;
-  }
-
-  /** 報名狀態的小標籤（教全區的活動）：缺人紅、額滿灰、人數足綠、公告藍 */
-  function statusBadge(st) {
-    return st ? `<span class="badge badge-${esc(st.kind)}">${esc(st.label)}</span>` : '';
-  }
-
-  /** 一天的名單：每個了愿項目一行「打掃：王小明、測試甲」（分壇只讀名字） */
-  function rosterHtml(day) {
-    const rows = day.positions.map((p) => `<li><span class="roster-pos">${esc(p.name)}</span>${p.people.length
-      ? p.people.map((x) => esc(x.name)).join('、')
-      : '<span class="muted">還沒有人</span>'}</li>`).join('');
-    return rows ? `<ul class="roster">${rows}</ul>` : '';
-  }
-
-  /** 組長填的名字拆成一個一個、去掉重複（規則同 worker/src/logic.js 的 NAME_SEP、cleanRosterNames） */
+  /** 名字之間的分隔（規則同 worker/src/logic.js 的 NAME_SEP、cleanNames）：拆成一個一個、去掉重複 */
   const NAME_SEP = /[,，、;；。．.\/／・·|｜\s　]+/;
   function splitNames(text) {
     const out = [];
@@ -117,48 +63,28 @@
     return out;
   }
 
-  /** 舊的烹飪團組用國字（八）：改成阿拉伯數字（8） */
-  const CN = { 一: '1', 二: '2', 三: '3', 四: '4', 五: '5', 六: '6', 七: '7', 八: '8', 九: '9', 十: '10' };
-  function normKey(p) {
-    const m = String(p || '').match(/^t:([^:]+):(.+)$/);
-    return m && CN[m[2]] ? `t:${m[1]}:${CN[m[2]]}` : String(p || '');
+  /** 名字預覽：拆好的名字一個一個顯示，太長紅色、超過 4 個字黃色 */
+  function namesPreview(text) {
+    const names = splitNames(text);
+    if (!names.length) return '';
+    const long = names.filter((n) => n.length > 20);
+    const odd = names.filter((n) => n.length > 4 && n.length <= 20);
+    return `<span class="name-count">會報 ${names.length} 人：</span>${names.map((n) => `<span class="name-chip${n.length > 20 ? ' is-bad' : n.length > 4 ? ' is-odd' : ''}">${esc(n)}</span>`).join('')}
+      ${long.length ? '<p class="form-error">標紅色的太長了（最多 20 字），是不是兩個名字中間忘了空格或「、」？</p>' : ''}
+      ${odd.length ? `<p class="name-warn">${odd.map((n) => `「${esc(n)}」`).join('')}超過 4 個字，確定是一個人的名字嗎？如果是兩個人，中間加空格或「、」。</p>` : ''}`;
   }
 
-  /** 分工選的（picks）：'u:區名'＝派給一區；'t:團名:組'＝派給一組（或併區），整組一份名單 */
-  function findPick(p) {
-    const [, tn, gk] = normKey(p).split(':');
-    const t = (window.SITE.teams || []).find((x) => x.name === tn);
-    const g = t && t.groups.find((x) => x[0] === gk);
-    return t && g ? { t, g } : null;
+  /** 超過 4 個字的名字：送出前再問一次。回傳 true＝照送 */
+  function confirmOdd(text) {
+    const odd = splitNames(text).filter((n) => n.length > 4 && n.length <= 20);
+    return !odd.length || window.confirm(`${odd.map((n) => `「${n}」`).join('')}超過 4 個字，確定是一個人的名字嗎？\n\n按「確定」照這樣送出；按「取消」回去把名字拆開（中間加空格或「、」）。`);
   }
 
-  /**
-   * 舊資料（2026-10-14 以前）按組會順便選那幾區：組在、組裡的區也都在的，那幾區是順便選的，拿掉。
-   * 組在、只剩部分的區：當時是把別的區取消，照「整組」算。
-   */
-  function normPicks(picks) {
-    const list = [...new Set((picks || []).map(normKey))];
-    const drop = new Set();
-    list.filter((p) => p.indexOf('t:') === 0).forEach((p) => { const fg = findPick(p); if (fg) fg.g[1].forEach((u) => drop.add('u:' + u)); });
-    return list.filter((p) => !drop.has(p));
+  /** 區的下拉選單 */
+  function unitOptions(selected, placeholder) {
+    return (placeholder ? `<option value="">${esc(placeholder)}</option>` : '') +
+      window.SITE.units.map((u) => `<option${u === selected ? ' selected' : ''}>${esc(u)}</option>`).join('');
   }
 
-  /** 一組（或一區）寫成一段：組名＋（組裡的區）；併區寫「教慈/理（併區）」。short：區名寫一個字（出席名單表用） */
-  function pickText(p, short) {
-    const name = (u) => (short ? u.replace(/^教|區$/g, '') : u);
-    if (String(p).indexOf('u:') === 0) return p.slice(2);
-    const fg = findPick(p);
-    if (!fg) return '';
-    const { t, g } = fg;
-    if (t.post === '（併區）') return g[0] + '（併區）';
-    return `${t.label !== undefined ? t.label : t.name}${t.pre}${g[0]}${t.post}（${g[1].map(name).join('、')}${g[2] ? '・' + g[2] : ''}）`;
-  }
-
-  /** 分工寫成一句：組放前面、區放後面 */
-  function dutyText(picks, short) {
-    const list = picks || [];
-    return list.filter((p) => p.indexOf('t:') === 0).concat(list.filter((p) => p.indexOf('u:') === 0)).map((p) => pickText(p, short)).filter(Boolean).join('、');
-  }
-
-  window.Fmt = { normKey, findPick, normPicks, pickText, dutyText, splitNames, statusBadge, rosterHtml, esc, toDateStr, parseDate, addDays, datesBetween, rocYear, weekday, shortDate, rocDate, catLabel, timeRange, cardTime, tagsHtml };
+  window.Fmt = { esc, toDateStr, parseDate, addDays, weekday, shortDate, md, rocDate, timeRange, splitNames, namesPreview, confirmOdd, unitOptions };
 })();

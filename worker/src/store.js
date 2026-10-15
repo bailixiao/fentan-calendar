@@ -1,5 +1,6 @@
 // 資料存放：Durable Object 內建的 SQLite（正式）或記憶體（測試、本機預覽）。兩種的用法完全相同。
-//   events：手動輸入的活動（一筆一列，內容存 JSON）；log：操作紀錄；sessions：登入通行碼（只存雜湊）；props：其他小設定。
+//   docs：教育組報名的資料（kind＝course／session／signup，一筆一列 JSON；規格第 11 節）。
+//   events：第一版的活動（只剩「刪除舊資料」會用到）；log：操作紀錄；sessions：登入通行碼（只存雜湊）；props：其他小設定。
 //   手機提醒：subs（推播訂閱：代號、推播網址、單位）、inbox（每支手機待顯示的通知）、msgs（管理者發的通知）、jobs（送出工作，分批送）。
 
 const LOG_KEEP = 2000; // 操作紀錄最多留幾筆
@@ -7,6 +8,7 @@ const LOG_KEEP = 2000; // 操作紀錄最多留幾筆
 /** 測試、本機預覽用：全部放記憶體 */
 export function createMemoryStore() {
   const events = new Map();
+  const docs = new Map(); // kind → Map(id → 資料)
   const log = [];
   const sessions = new Map();
   const props = new Map();
@@ -17,6 +19,10 @@ export function createMemoryStore() {
   const jobs = new Map();
   const byId = (a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
   return {
+    allDocs: (kind) => [...(docs.get(kind) || new Map()).values()].map((d) => JSON.parse(JSON.stringify(d))),
+    getDoc: (kind, id) => { const m = docs.get(kind); return m && m.has(id) ? JSON.parse(JSON.stringify(m.get(id))) : null; },
+    putDoc: (kind, doc) => { if (!docs.has(kind)) docs.set(kind, new Map()); docs.get(kind).set(doc.id, JSON.parse(JSON.stringify(doc))); },
+    deleteDoc: (kind, id) => { const m = docs.get(kind); if (m) m.delete(id); },
     allEvents: () => [...events.values()].map((e) => ({ ...e })),
     getEvent: (id) => (events.has(id) ? { ...events.get(id) } : null),
     putEvent: (ev) => { events.set(ev.id, { ...ev }); },
@@ -58,6 +64,7 @@ export function createSqlStore(storage) {
   const sql = storage.sql;
   sql.exec('CREATE TABLE IF NOT EXISTS events (id TEXT PRIMARY KEY, data TEXT NOT NULL)');
   sql.exec('CREATE TABLE IF NOT EXISTS log (seq INTEGER PRIMARY KEY AUTOINCREMENT, data TEXT NOT NULL)');
+  sql.exec('CREATE TABLE IF NOT EXISTS docs (kind TEXT NOT NULL, id TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY (kind, id))');
   sql.exec('CREATE TABLE IF NOT EXISTS sessions (hash TEXT PRIMARY KEY, exp INTEGER NOT NULL)');
   // 2026/10/13：加上 who（''＝總管理者、區名＝組長帳號）；舊的表沒有這一欄就補上
   if (!sql.exec('PRAGMA table_info(sessions)').toArray().some((c) => c.name === 'who')) sql.exec("ALTER TABLE sessions ADD COLUMN who TEXT NOT NULL DEFAULT ''");
@@ -71,6 +78,10 @@ export function createSqlStore(storage) {
   const one = (cursor) => { const r = cursor.toArray(); return r.length ? r[0] : null; };
 
   return {
+    allDocs: (kind) => sql.exec('SELECT data FROM docs WHERE kind = ?', kind).toArray().map((r) => JSON.parse(r.data)),
+    getDoc: (kind, id) => { const r = one(sql.exec('SELECT data FROM docs WHERE kind = ? AND id = ?', kind, id)); return r ? JSON.parse(r.data) : null; },
+    putDoc: (kind, doc) => { sql.exec('INSERT INTO docs (kind, id, data) VALUES (?, ?, ?) ON CONFLICT(kind, id) DO UPDATE SET data = excluded.data', kind, doc.id, JSON.stringify(doc)); },
+    deleteDoc: (kind, id) => { sql.exec('DELETE FROM docs WHERE kind = ? AND id = ?', kind, id); },
     allEvents: () => sql.exec('SELECT data FROM events').toArray().map((r) => JSON.parse(r.data)),
     getEvent: (id) => { const r = one(sql.exec('SELECT data FROM events WHERE id = ?', id)); return r ? JSON.parse(r.data) : null; },
     putEvent: (ev) => { sql.exec('INSERT INTO events (id, data) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data', ev.id, JSON.stringify(ev)); },

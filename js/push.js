@@ -21,12 +21,12 @@
   }
 
   function unitLabel(u) {
-    return u === window.SITE.fentan ? '分壇的活動' : `${u}＋分壇的活動`;
+    return u === window.SITE.fentan ? '教育組' : `教育組（${u}）`;
   }
 
   function unitOptions(selected) {
     return [window.SITE.fentan].concat(window.SITE.units)
-      .map((u) => `<option value="${Fmt.esc(u)}"${u === selected ? ' selected' : ''}>${Fmt.esc(u === window.SITE.fentan ? '分壇' : u)}</option>`).join('');
+      .map((u) => `<option value="${Fmt.esc(u)}"${u === selected ? ' selected' : ''}>${Fmt.esc(u === window.SITE.fentan ? '不分區' : u)}</option>`).join('');
   }
 
   /** base64url → Uint8Array（applicationServerKey 用） */
@@ -53,7 +53,7 @@
   }
 
   function renderButton() {
-    el.btn.textContent = st.sub ? `🔔 手機提醒：已開啟（${st.unit === window.SITE.fentan ? '分壇' : st.unit}）` : '🔔 手機提醒';
+    el.btn.textContent = st.sub ? '🔔 手機提醒：已開啟' : '🔔 手機提醒';
     el.btn.classList.toggle('is-on', !!st.sub);
   }
 
@@ -74,7 +74,7 @@
         <ol class="help-steps">
           <li><span class="help-num">1</span><span>用 Safari 打開這個網站，按下面的「分享」按鈕（方框加向上箭頭）。</span></li>
           <li><span class="help-num">2</span><span>選「加入主畫面」，再按「加入」。</span></li>
-          <li><span class="help-num">3</span><span>從主畫面的「分壇行事曆」打開，再按「🔔 手機提醒」。</span></li>
+          <li><span class="help-num">3</span><span>從主畫面的「教育組報名」打開，再按「🔔 手機提醒」。</span></li>
         </ol>
         <p class="hint">需要 iOS 16.4 以上。</p>`;
     } else if (!supported()) {
@@ -82,15 +82,15 @@
     } else if (Notification.permission === 'denied') {
       html = `<p><strong>通知被封鎖了。</strong>請到手機的設定裡，找到這個網站（或 Chrome、Safari）的「通知」，改成允許，再回來開啟。</p>`;
     } else if (!st.sub) {
-      const def = st.unit || CalendarPage.unit();
-      html = `<p>開啟後，每天<strong>晚上 8 點提醒明天</strong>、<strong>早上 7 點提醒今天</strong>的活動（沒有活動不送），管理者也可能發重要通知。不用填名字。</p>
-        <label class="push-unit"><span>要收哪個單位的提醒</span><select class="input" data-f="unit">${unitOptions(def)}</select></label>
-        <p class="hint">選某一區，會提醒那一區＋分壇的活動；選分壇，只提醒分壇的活動。</p>
+      let def = st.unit;
+      try { def = def || localStorage.getItem('fentan-calendar:my-unit') || window.SITE.fentan; } catch (e) { def = def || window.SITE.fentan; }
+      html = `<p>開啟後，每天<strong>晚上 8 點提醒明天</strong>、<strong>早上 7 點提醒今天</strong>有上課的班（沒有課不送），教育組也可能發重要通知。不用填名字。</p>
+        <label class="push-unit"><span>你是哪一區的（教育組發通知時可以只發給某幾區）</span><select class="input" data-f="unit">${unitOptions(def)}</select></label>
         ${msg}
         <button type="button" class="btn btn-primary btn-block" data-act="on"${st.busy ? ' disabled' : ''}>開啟提醒</button>`;
     } else {
       html = `<p>已開啟：收 <strong>${Fmt.esc(unitLabel(st.unit))}</strong>的提醒。</p>
-        <label class="push-unit"><span>改成收哪個單位</span><select class="input" data-f="unit">${unitOptions(st.unit)}</select></label>
+        <label class="push-unit"><span>改成哪一區</span><select class="input" data-f="unit">${unitOptions(st.unit)}</select></label>
         ${msg}
         <div class="push-actions">
           <button type="button" class="btn" data-act="test"${st.busy ? ' disabled' : ''}>傳測試通知</button>

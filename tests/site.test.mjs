@@ -13,16 +13,14 @@ function frontSite() {
   return ctx.window.SITE;
 }
 
-test('前後端的名稱、區名、類別一致', () => {
+test('前後端的名稱、區名、顏色一致', () => {
   const f = frontSite();
   assert.equal(f.name, SITE.name);
   assert.equal(f.fentan, SITE.fentan);
+  assert.equal(f.roll, SITE.roll);
   assert.deepEqual([...f.units], SITE.units);
-  assert.deepEqual([...f.categories], SITE.categories);
-  assert.deepEqual(JSON.parse(JSON.stringify(f.attendRows)), SITE.attendRows);
-  assert.equal(f.jiaoquan.unit, SITE.jiaoquan.unit);
-  assert.equal(f.jiaoquan.site, SITE.jiaoquan.site);
-  assert.deepEqual(Object.keys(f.categoryLabels), SITE.categories);
+  assert.deepEqual([...f.colors], SITE.colors);
+  assert.deepEqual(Object.keys(f.colorNames), SITE.colors);
 });
 
 test('16 區不重複', () => {

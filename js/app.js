@@ -1,24 +1,26 @@
-// 進入點：依網址 # 切換頁面（行事曆、活動詳情、常見問題、管理後台），字體大小，Service Worker。
+// 進入點：依網址 # 切換頁面（首頁、班、那一堂、常見問題、管理後台），字體大小，Service Worker。
 (function () {
   'use strict';
 
-  const VIEWS = ['calendar', 'event', 'help', 'admin'];
+  const VIEWS = ['home', 'page', 'help', 'admin'];
   const TEXT_KEY = 'fentan-calendar:text-size';
   const SIZES = ['', 'l', 'xl'];
 
   function showView(name) {
     VIEWS.forEach((v) => { document.getElementById('view-' + v).hidden = v !== name; });
-    document.body.classList.toggle('is-sub', name !== 'calendar');
+    document.body.classList.toggle('is-sub', name !== 'home');
     document.body.classList.toggle('on-admin', name === 'admin');
   }
 
   function route() {
     const hash = location.hash || '#/';
-    const ev = hash.match(/^#\/event\/([^?]+)(?:\?date=(\d{4}-\d{2}-\d{2}))?/);
-    if (ev) {
-      showView('event');
+    const page = hash.match(/^#\/(c|s)\/([^?/]+)/);
+    if (page) {
+      showView('page');
       window.scrollTo(0, 0);
-      EventPage.show(document.getElementById('view-event'), decodeURIComponent(ev[1]), ev[2]);
+      const view = document.getElementById('view-page');
+      const id = decodeURIComponent(page[2]);
+      if (page[1] === 'c') HomePage.showCourse(view, id); else HomePage.showSession(view, id);
       return;
     }
     if (/^#\/help\/?$/.test(hash)) {
@@ -34,8 +36,8 @@
       AdminPage.show(document.getElementById('view-admin'), admin[1]);
       return;
     }
-    showView('calendar');
-    CalendarPage.onShow();
+    showView('home');
+    HomePage.showHome(document.getElementById('view-home'));
   }
 
   function initTextSize() {
@@ -50,7 +52,6 @@
       i = (i + 1) % SIZES.length;
       try { localStorage.setItem(TEXT_KEY, SIZES[i]); } catch (e) { /* 不記住 */ }
       apply();
-      CalendarPage.onShow();
     });
     apply();
   }
@@ -58,7 +59,6 @@
   function init() {
     document.title = window.SITE.name;
     initTextSize();
-    CalendarPage.init();
     PushPage.init();
     window.addEventListener('hashchange', route);
     route();

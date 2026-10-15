@@ -89,7 +89,7 @@ export function dailyContent(events, when, date) {
   });
   if (list.length > 4) lines.push(`⋯還有 ${list.length - 4} 項`);
   return {
-    title: `🙏 ${when === 'today' ? '今天' : '明天'}的活動（${m}/${d} ${wd}）`,
+    title: `🙏 ${when === 'today' ? '今天' : '明天'}的課（${m}/${d} ${wd}）`,
     body: lines.join('\n'),
     url: '#/'
   };

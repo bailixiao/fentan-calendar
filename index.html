@@ -4,46 +4,30 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f6f1e7">
-  <title>宏教分壇行事曆</title>
-  <meta name="description" content="宏教分壇與 16 區的活動行事曆">
+  <title>分壇教育組報名</title>
+  <meta name="description" content="分壇教育組的班：高大班、青少年班，每一堂都可以在這裡報名">
   <!-- 加到手機主畫面時的圖示與名稱 -->
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-  <meta name="apple-mobile-web-app-title" content="分壇行事曆">
+  <meta name="apple-mobile-web-app-title" content="教育組報名">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <link rel="preconnect" href="https://fentan-calendar-api.duty-calendar-worker.workers.dev" crossorigin>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/app.css?v=20261014q">
+  <link rel="stylesheet" href="css/app.css?v=20261015a">
   <script>try { var t = localStorage.getItem('fentan-calendar:text-size'); if (t === 'l' || t === 'xl') document.documentElement.classList.add('text-' + t); } catch (e) {}</script>
 </head>
 <body>
   <header class="app-header">
-    <a class="app-title" href="#/"><span class="header-back" aria-hidden="true">‹</span><span>宏教分壇行事曆</span></a>
+    <a class="app-title" href="#/"><span class="header-back" aria-hidden="true">‹</span><span>分壇教育組報名</span></a>
     <button type="button" class="text-size-btn" id="text-size" aria-label="字體大小">A＋</button>
   </header>
 
   <main class="app-main">
-    <section id="view-calendar" aria-label="行事曆">
-      <div class="toolbar">
-        <div class="view-switch" role="group" aria-label="切換檢視">
-          <button type="button" data-view="year">年</button>
-          <button type="button" data-view="month">月</button>
-          <button type="button" data-view="week">週</button>
-          <button type="button" data-view="recent">近期</button>
-        </div>
-        <div class="nav">
-          <button type="button" id="cal-prev" class="btn btn-icon" aria-label="上一段">‹</button>
-          <h1 id="cal-title" class="cal-title" aria-live="polite"></h1>
-          <button type="button" id="cal-next" class="btn btn-icon" aria-label="下一段">›</button>
-          <button type="button" id="cal-today" class="btn btn-ghost">今天</button>
-        </div>
-      </div>
-
-
+    <section id="view-home" aria-label="可以報名的班">
       <div class="top-btns">
         <button type="button" class="btn push-open" id="push-open" aria-expanded="false" aria-controls="push-panel">🔔 手機提醒</button>
       </div>
@@ -51,25 +35,11 @@
         <div class="push-head"><h2>🔔 手機提醒</h2><button type="button" class="link-btn" data-act="close">收起</button></div>
         <div class="push-body"></div>
       </section>
-
-      <div id="cal-status" class="status" role="status" hidden></div>
-
-      <button type="button" id="past-toggle" class="btn past-toggle" hidden></button>
-      <div id="fc" class="calendar"></div>
-      <div id="week" class="week" hidden></div>
-
-      <ul class="legend" aria-label="色點說明">
-        <li><i class="dot dot-勤務"></i>總務・勤務</li>
-        <li><i class="dot dot-道務"></i>道務</li>
-        <li><i class="dot dot-教育"></i>教育</li>
-      </ul>
-
-      <section id="day-panel" class="day-panel" aria-live="polite"></section>
-
+      <div id="board" class="board"></div>
       <a class="btn btn-block help-link" href="#/help">❓ 常見問題</a>
     </section>
 
-    <section id="view-event" class="detail-view" hidden></section>
+    <section id="view-page" class="detail-view" hidden></section>
     <section id="view-help" class="help-view" hidden></section>
     <section id="view-admin" class="admin-view" hidden></section>
   </main>
@@ -83,20 +53,15 @@
     </div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/lunar-javascript@1.7.7/lunar.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.21/index.global.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@fullcalendar/core@6.1.21/locales/zh-tw.global.min.js"></script>
   <!-- 改了 js、css 後把 ?v= 的日期換新，手機才不會用到舊的檔案（GitHub Pages 會快取 10 分鐘） -->
-  <script src="js/site.js?v=20261014q"></script>
-  <script src="js/config.js?v=20261014q"></script>
-  <script src="js/api.js?v=20261014q"></script>
-  <script src="js/format.js?v=20261014q"></script>
-  <script src="js/lunar-util.js?v=20261014q"></script>
-  <script src="js/calendar.js?v=20261014q"></script>
-  <script src="js/event-page.js?v=20261014q"></script>
-  <script src="js/help.js?v=20261014q"></script>
-  <script src="js/push.js?v=20261014q"></script>
-  <script src="js/admin.js?v=20261014q"></script>
-  <script src="js/app.js?v=20261014q"></script>
+  <script src="js/site.js?v=20261015a"></script>
+  <script src="js/config.js?v=20261015a"></script>
+  <script src="js/api.js?v=20261015a"></script>
+  <script src="js/format.js?v=20261015a"></script>
+  <script src="js/home.js?v=20261015a"></script>
+  <script src="js/help.js?v=20261015a"></script>
+  <script src="js/push.js?v=20261015a"></script>
+  <script src="js/admin.js?v=20261015a"></script>
+  <script src="js/app.js?v=20261015a"></script>
 </body>
 </html>
