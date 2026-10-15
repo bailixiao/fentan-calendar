@@ -256,9 +256,8 @@
     const wd = Fmt.parseDate(first).getDay();
     return `
       <label class="form-row"><span>多久一次</span><select class="input" name="every">
-        <option value="biweek"${every === 'month' ? '' : ' selected'}>兩個禮拜一次（隔週）</option>
-        <option value="month"${every === 'month' ? ' selected' : ''}>一個月一次</option>
-        <option value="pick">日期不固定（自己一天一天選）</option></select></label>
+        <option value="pick"${every === 'month' ? '' : ' selected'}>日期不固定（在月曆上點選）</option>
+        <option value="month"${every === 'month' ? ' selected' : ''}>一個月一次（每個月第幾個星期幾）</option></select></label>
       <div class="form-row month-rule"${every === 'month' ? '' : ' hidden'}><span>每個月的</span>
         <span class="month-pick"><select class="input" name="nth">${[1, 2, 3, 4, 5].map((k) => `<option value="${k}"${k === n ? ' selected' : ''}>${k === 5 ? '最後一個' : `第 ${k} 個`}</option>`).join('')}</select>
         <select class="input" name="weekday">${WD.map((w, k) => `<option value="${k}"${k === wd ? ' selected' : ''}>星期${w}</option>`).join('')}</select></span></div>
@@ -266,28 +265,58 @@
         <label><span>從哪一天開始</span><input class="input" type="date" name="first" value="${first}"></label>
         <label><span>排到哪一天</span><input class="input" type="date" name="until" value="${Fmt.addDays(first, 364)}"></label>
       </div>
-      <div class="pick-dates" hidden>
-        <span class="form-label">要上課的日期</span>
-        <div class="pick-list">${pickRow(first)}</div>
-        <button type="button" class="btn btn-small" data-act="add-date">＋ 再加一個日期</button>
+      <div class="pick-dates"${every === 'month' ? ' hidden' : ''} data-month="${first.slice(0, 7)}" data-picked="[]">
+        <span class="form-label">在月曆上點要上課的日子（再點一次取消，可以翻月）</span>
+        <div class="mini-cal"></div>
+        <div class="picked-list"></div>
       </div>
       <p class="hint plan-rule" aria-live="polite"></p>`;
   }
 
-  const pickRow = (v) => `<div class="pick-row"><input class="input" type="date" data-pick-date value="${Fmt.esc(v || '')}" aria-label="上課日期"><button type="button" class="btn btn-small btn-quiet-danger" data-act="rm-date" aria-label="拿掉這個日期">✕</button></div>`;
+  // ---------- 自己選日期：小月曆，點一下選、再點一下取消 ----------
+  const pickedOf = (box) => { try { return JSON.parse(box.dataset.picked || '[]'); } catch (e) { return []; } };
 
-  /** 自己選日期：＋ 再加一個（預設最後一個日期的四週後）、✕ 拿掉 */
+  function drawPick(form) {
+    const box = form.querySelector('.pick-dates');
+    const picked = pickedOf(box);
+    const ym = box.dataset.month;
+    const y = Number(ym.slice(0, 4));
+    const m = Number(ym.slice(5, 7));
+    const first = new Date(y, m - 1, 1);
+    const days = new Date(y, m, 0).getDate();
+    const today = Fmt.toDateStr(new Date());
+    const cells = [];
+    for (let i = 0; i < first.getDay(); i++) cells.push('<span></span>');
+    for (let d = 1; d <= days; d++) {
+      const date = `${ym}-${String(d).padStart(2, '0')}`;
+      const on = picked.indexOf(date) !== -1;
+      cells.push(`<button type="button" class="mc-day${on ? ' is-on' : ''}${date === today ? ' is-today' : ''}${(first.getDay() + d - 1) % 7 === 0 ? ' is-sun' : ''}" data-day="${date}" aria-pressed="${on}">${d}</button>`);
+    }
+    box.querySelector('.mini-cal').innerHTML = `
+      <div class="mc-head"><button type="button" class="btn btn-small" data-mc="-1" aria-label="上個月">‹</button><strong>${y} 年 ${m} 月</strong><button type="button" class="btn btn-small" data-mc="1" aria-label="下個月">›</button></div>
+      <div class="mc-grid">${WD.map((w) => `<span class="mc-wd">${w}</span>`).join('')}${cells.join('')}</div>`;
+    box.querySelector('.picked-list').innerHTML = picked.length
+      ? `<span class="muted">已選 ${picked.length} 天：</span>${picked.map((d) => `<span class="person">${Fmt.esc(Fmt.shortDate(d))}<button type="button" class="person-x" data-unpick="${d}" aria-label="拿掉${Fmt.esc(Fmt.shortDate(d))}">✕</button></span>`).join('')}`
+      : '<span class="muted">還沒有選日期</span>';
+  }
+
   function bindRepeat(form) {
+    drawPick(form);
     form.addEventListener('click', (e) => {
-      const b = e.target.closest('[data-act="add-date"], [data-act="rm-date"]');
-      if (!b) return;
-      const list = form.querySelector('.pick-list');
-      if (b.dataset.act === 'add-date') {
-        const dates = [...list.querySelectorAll('[data-pick-date]')].map((x) => x.value).filter(Boolean).sort();
-        list.insertAdjacentHTML('beforeend', pickRow(dates.length ? Fmt.addDays(dates[dates.length - 1], 28) : form.first.value));
-        list.lastElementChild.querySelector('input').focus();
-      } else if (list.children.length > 1) b.closest('.pick-row').remove();
-      else b.closest('.pick-row').querySelector('input').value = '';
+      const box = form.querySelector('.pick-dates');
+      const b = e.target.closest('[data-mc], [data-day], [data-unpick]');
+      if (!b || !box.contains(b)) return;
+      let picked = pickedOf(box);
+      if (b.dataset.mc) {
+        const [y, m] = box.dataset.month.split('-').map(Number);
+        const d = new Date(y, m - 1 + Number(b.dataset.mc), 1);
+        box.dataset.month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      } else {
+        const day = b.dataset.day || b.dataset.unpick;
+        picked = picked.indexOf(day) === -1 && b.dataset.day ? picked.concat(day).sort() : picked.filter((x) => x !== day);
+        box.dataset.picked = JSON.stringify(picked);
+      }
+      drawPick(form);
       form.dispatchEvent(new Event('change'));
     });
   }
@@ -300,9 +329,9 @@
     form.querySelector('.month-rule').hidden = every !== 'month';
     form.querySelector('.range-rows').hidden = every === 'pick';
     form.querySelector('.pick-dates').hidden = every !== 'pick';
-    const picked = [...new Set([...form.querySelectorAll('[data-pick-date]')].map((x) => x.value).filter(Boolean))].sort();
+    const picked = pickedOf(form.querySelector('.pick-dates'));
     const dates = every === 'pick' ? picked : every === 'month' ? monthlyDates(form.first.value, form.until.value, n, wd) : biweeklyDates(form.first.value, form.until.value);
-    const rule = every === 'pick' ? '自己選的日期' : every === 'month' ? `每個月${n === 5 ? '最後一個' : `第 ${n} 個`}星期${WD[wd]}` : (form.first.value ? `每兩個禮拜的星期${Fmt.weekday(form.first.value)}` : '');
+    const rule = every === 'pick' ? '選的日期' : every === 'month' ? `每個月${n === 5 ? '最後一個' : `第 ${n} 個`}星期${WD[wd]}` : (form.first.value ? `每兩個禮拜的星期${Fmt.weekday(form.first.value)}` : '');
     form.querySelector('.plan-rule').textContent = dates.length
       ? `${rule}，共 ${dates.length} 堂：${dates.slice(0, 4).map(Fmt.shortDate).join('、')}${dates.length > 4 ? '⋯' : ''}`
       : every === 'pick' ? '請選要上課的日期' : '這段日期排不出課，請檢查日期';
@@ -341,8 +370,8 @@
         ${id ? '' : `
         <fieldset class="form-block">
           <legend>排課</legend>
-          <label class="radio-row"><input type="radio" name="plan" value="year" checked> 排很多堂（隔週、一個月一次、或自己選日期）</label>
-          <div class="plan-year">${repeatFields(first, 'biweek')}</div>
+          <label class="radio-row"><input type="radio" name="plan" value="year" checked> 排很多堂（在月曆上點選，或一個月一次）</label>
+          <div class="plan-year">${repeatFields(first, 'pick')}</div>
           <label class="radio-row"><input type="radio" name="plan" value="one"> 只有一堂（臨時活動）</label>
           <label class="form-row plan-one" hidden><span>日期</span><input class="input" type="date" name="date" value="${first}"></label>
           <label class="radio-row"><input type="radio" name="plan" value="none"> 先不排，之後再加</label>
@@ -443,7 +472,7 @@
       <form class="admin-form make-form" novalidate>
         <fieldset class="form-block">
           <legend>再排一段</legend>
-          ${repeatFields(first, 'biweek')}
+          ${repeatFields(first, 'pick')}
           <p class="form-error" hidden></p>
           <button type="submit" class="btn">排課</button>
         </fieldset>

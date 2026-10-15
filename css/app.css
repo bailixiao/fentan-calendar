@@ -846,10 +846,15 @@ select.input { appearance: auto; }
 .month-pick { display: flex; gap: 8px; }
 .pick-dates { display: grid; gap: 6px; }
 .pick-dates .form-label { font-size: .9rem; color: var(--ink-2); }
-.pick-list { display: grid; gap: 6px; }
-.pick-row { display: flex; gap: 6px; align-items: center; }
-.pick-row .input { flex: 1; min-width: 0; }
-.pick-dates [data-act="add-date"] { justify-self: start; }
+.mini-cal { max-width: 360px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px; }
+.mc-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.mc-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; text-align: center; }
+.mc-wd { font-size: .8rem; color: var(--muted); }
+.mc-day { min-height: 40px; border: 1px solid transparent; border-radius: 8px; background: var(--paper); font: inherit; cursor: pointer; color: var(--ink); }
+.mc-day.is-sun { color: var(--accent); }
+.mc-day.is-today { border-color: var(--line); font-weight: 700; }
+.mc-day.is-on { background: var(--accent); color: #fff; font-weight: 700; }
+.picked-list { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .month-pick .input { flex: 1; min-width: 0; }
 .plan-year, .make-form .form-block { display: grid; gap: 8px; }
 .board { display: grid; gap: 14px; margin: 4px 0 18px; }
