@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { createFront } from '../worker/src/front.js';
 import { createStoreApp } from '../worker/src/store-app.js';
 import { createMemoryStore } from '../worker/src/store.js';
-import { biweekly, cleanSession } from '../worker/src/edu.js';
+import { biweekly, cleanSession, monthly } from '../worker/src/edu.js';
 import { cleanNames } from '../worker/src/logic.js';
 
 function setup() {
@@ -33,6 +33,10 @@ async function ready(env) {
 test('隔週六排課、名字整理', () => {
   assert.deepEqual(biweekly('2026-10-17', '2026-11-30'), ['2026-10-17', '2026-10-31', '2026-11-14', '2026-11-28']);
   assert.deepEqual(biweekly('2026-10-17', '2026-10-01'), []);
+  // 一個月一次：10/24 是第 4 個星期六 → 每月第 4 個星期六；10/31 是第 5 個 → 每月最後一個星期六
+  assert.deepEqual(monthly('2026-10-24', '2027-01-31'), ['2026-10-24', '2026-11-28', '2026-12-26', '2027-01-23']);
+  assert.deepEqual(monthly('2026-10-31', '2027-01-31'), ['2026-10-31', '2026-11-28', '2026-12-26', '2027-01-30']);
+  assert.deepEqual(monthly('2026-10-03', '2026-12-31'), ['2026-10-03', '2026-11-07', '2026-12-05']);
   assert.deepEqual(cleanNames('王小明 測試甲、測試乙，王小明'), ['王小明', '測試甲', '測試乙']);
   assert.throws(() => cleanNames('一二三四五六七八九十一二三四五六七八九十一'), /太長/);
   assert.throws(() => cleanSession({ date: '2026-10-17', deadline: '2026-10-18' }), /不能晚於上課/);

@@ -222,6 +222,14 @@
     return '<option value="">不填</option>' + list.map((t) => `<option${t === value ? ' selected' : ''}>${t}</option>`).join('');
   }
 
+  /** 排課規則寫成一句話：「每兩個禮拜的星期六」「每個月第 4 個星期六」 */
+  function ruleText(every, first) {
+    const wd = Fmt.weekday(first);
+    if (every !== 'month') return `會排在每兩個禮拜的星期${wd}（${Fmt.md(first)}、${Fmt.md(Fmt.addDays(first, 14))}、${Fmt.md(Fmt.addDays(first, 28))}⋯）`;
+    const n = Math.ceil(Number(first.slice(8, 10)) / 7);
+    return `會排在每個月${n >= 5 ? '最後一個' : `第 ${n} 個`}星期${wd}`;
+  }
+
   /** 下一個星期六（今天是星期六就今天） */
   function nextSaturday() {
     const d = new Date();
@@ -253,10 +261,14 @@
         ${id ? '' : `
         <fieldset class="form-block">
           <legend>排課</legend>
-          <label class="radio-row"><input type="radio" name="plan" value="year" checked> 隔週六上課，一次排一整年</label>
-          <div class="plan-year form-row-pair">
-            <label><span>第一堂</span><input class="input" type="date" name="first" value="${first}"></label>
-            <label><span>排到哪一天</span><input class="input" type="date" name="until" value="${Fmt.addDays(first, 364)}"></label>
+          <label class="radio-row"><input type="radio" name="plan" value="year" checked> 隔週六上課（兩個禮拜一次），一次排一整年</label>
+          <label class="radio-row"><input type="radio" name="plan" value="month"> 一個月一次，一次排一整年</label>
+          <div class="plan-year">
+            <div class="form-row-pair">
+              <label><span>第一堂</span><input class="input" type="date" name="first" value="${first}"></label>
+              <label><span>排到哪一天</span><input class="input" type="date" name="until" value="${Fmt.addDays(first, 364)}"></label>
+            </div>
+            <p class="hint plan-rule" aria-live="polite"></p>
           </div>
           <label class="radio-row"><input type="radio" name="plan" value="one"> 只有一堂（臨時活動）</label>
           <label class="form-row plan-one" hidden><span>日期</span><input class="input" type="date" name="date" value="${first}"></label>
@@ -271,10 +283,17 @@
     bindCommon();
     const form = view.querySelector('form');
     const errBox = form.querySelector('.form-error');
-    if (!id) form.addEventListener('change', () => {
-      form.querySelector('.plan-year').hidden = form.plan.value !== 'year';
-      form.querySelector('.plan-one').hidden = form.plan.value !== 'one';
-    });
+    if (!id) {
+      const sync = () => {
+        const p = form.plan.value;
+        form.querySelector('.plan-year').hidden = p !== 'year' && p !== 'month';
+        form.querySelector('.plan-one').hidden = p !== 'one';
+        form.querySelector('.plan-rule').textContent = form.first.value ? ruleText(p === 'month' ? 'month' : 'biweek', form.first.value) : '';
+      };
+      form.addEventListener('change', sync);
+      form.first.addEventListener('input', sync);
+      sync();
+    }
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const course = {
@@ -287,9 +306,9 @@
       if (!course.name) errs.push('請填班的名稱');
       if (course.endTime && !course.startTime) errs.push('有結束時間就要選開始時間');
       let plan = null;
-      if (!id && form.plan.value === 'year') {
+      if (!id && (form.plan.value === 'year' || form.plan.value === 'month')) {
         if (!form.first.value) errs.push('請選第一堂的日期');
-        plan = { first: form.first.value, until: form.until.value };
+        plan = { first: form.first.value, until: form.until.value, every: form.plan.value === 'month' ? 'month' : 'biweek' };
       }
       if (!id && form.plan.value === 'one') {
         if (!form.date.value) errs.push('請選日期');
@@ -348,7 +367,8 @@
         </a>`).join('') || '<p class="panel-empty">還沒有課</p>'}</div>
       <form class="admin-form make-form" novalidate>
         <fieldset class="form-block">
-          <legend>再排一段（隔週六）</legend>
+          <legend>再排一段</legend>
+          <label class="form-row"><span>多久一次</span><select class="input" name="every"><option value="biweek">兩個禮拜一次</option><option value="month">一個月一次</option></select></label>
           <div class="form-row-pair">
             <label><span>從哪一天</span><input class="input" type="date" name="first" value="${first}"></label>
             <label><span>排到哪一天</span><input class="input" type="date" name="until" value="${Fmt.addDays(first, 364)}"></label>
@@ -365,7 +385,7 @@
       const errBox = form.querySelector('.form-error');
       busy(true, '排課中⋯');
       try {
-        const res = await Api.admin('adminSessionsMake', { courseId: c.id, plan: { first: form.first.value, until: form.until.value } });
+        const res = await Api.admin('adminSessionsMake', { courseId: c.id, plan: { first: form.first.value, until: form.until.value, every: form.every.value } });
         busy(false);
         HomePage.refresh();
         await renderCourse(id);

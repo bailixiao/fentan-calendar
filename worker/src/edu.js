@@ -15,6 +15,34 @@ export function biweekly(first, until) {
   return out;
 }
 
+/** 第一堂是那個月的第幾個星期幾（1～5；第 5 個＝最後一個） */
+export function nthWeekday(date) {
+  return Math.ceil(Number(date.slice(8, 10)) / 7);
+}
+
+/**
+ * 一個月一次：每個月的「第 n 個星期幾」，n 和星期幾照第一堂的日期；第一堂是第 5 個的話，每個月排最後一個。排到 until（含）
+ */
+export function monthly(first, until) {
+  const out = [];
+  if (!isDate(first) || !isDate(until) || until < first) return out;
+  const wd = new Date(first + 'T00:00:00Z').getUTCDay();
+  const n = nthWeekday(first);
+  let y = Number(first.slice(0, 4));
+  let m = Number(first.slice(5, 7)) - 1;
+  for (let k = 0; k < 24 && out.length < MAX_SESSIONS; k++, m++) {
+    const firstDay = new Date(Date.UTC(y, m, 1));
+    const offset = (wd - firstDay.getUTCDay() + 7) % 7;
+    const days = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+    let day = 1 + offset + (Math.min(n, 5) - 1) * 7;
+    if (n >= 5 || day > days) { day = 1 + offset; while (day + 7 <= days) day += 7; } // 最後一個
+    const d = new Date(Date.UTC(y, m, day)).toISOString().slice(0, 10);
+    if (d > until) break;
+    if (d >= first) out.push(d);
+  }
+  return out;
+}
+
 /** 報名截止：每堂自己填的，沒填＝上課前一天 */
 export const deadlineOf = (s) => s.deadline || addDays(s.date, -1);
 
@@ -289,7 +317,8 @@ export function createEduApp(store, opts) {
 
   /** plan：{ first, until }（隔週六排）或 { dates: [...] } */
   function makeSessions(c, plan) {
-    const dates = Array.isArray(plan.dates) ? plan.dates.filter(isDate) : biweekly(plan.first, plan.until || (isDate(plan.first) ? addDays(plan.first, 364) : ''));
+    const until = plan.until || (isDate(plan.first) ? addDays(plan.first, 364) : '');
+    const dates = Array.isArray(plan.dates) ? plan.dates.filter(isDate) : plan.every === 'month' ? monthly(plan.first, until) : biweekly(plan.first, until);
     if (!dates.length) throw new AppError('BAD_REQUEST', '請選第一堂的日期');
     const have = new Set(sessionsOf(c.id).map((s) => s.date));
     if (have.size + dates.length > MAX_SESSIONS) throw new AppError('BAD_REQUEST', `一個班最多 ${MAX_SESSIONS} 堂`);
