@@ -4,7 +4,7 @@ import { SITE } from './site.js';
 import { AppError, addDays, cleanNames, isDate, isTime, isUnit, str, taipeiDate, taipeiStamp, unitOrder } from './logic.js';
 
 export const ROLL = ['到', '請假', '缺席'];
-const MAX_SESSIONS = 60; // 一個班最多幾堂
+const MAX_SESSIONS = 200; // 一個班最多幾堂
 const MAX_SIGNUPS = 300; // 一堂最多幾人
 
 /** 第一堂之後每 14 天（隔週六），排到 until（含） */
@@ -21,13 +21,14 @@ export function nthWeekday(date) {
 }
 
 /**
- * 一個月一次：每個月的「第 n 個星期幾」，n 和星期幾照第一堂的日期；第一堂是第 5 個的話，每個月排最後一個。排到 until（含）
+ * 一個月一次：每個月的「第 n 個星期幾」（n＝1～4，5＝最後一個；wd＝0 星期日～6 星期六），從 first 排到 until（含）。
+ * 沒給 n、wd 就照 first 那一天算。
  */
-export function monthly(first, until) {
+export function monthly(first, until, nth, weekday) {
   const out = [];
   if (!isDate(first) || !isDate(until) || until < first) return out;
-  const wd = new Date(first + 'T00:00:00Z').getUTCDay();
-  const n = nthWeekday(first);
+  const wd = Number.isInteger(weekday) && weekday >= 0 && weekday <= 6 ? weekday : new Date(first + 'T00:00:00Z').getUTCDay();
+  const n = Number.isInteger(nth) && nth >= 1 && nth <= 5 ? nth : nthWeekday(first);
   let y = Number(first.slice(0, 4));
   let m = Number(first.slice(5, 7)) - 1;
   for (let k = 0; k < 24 && out.length < MAX_SESSIONS; k++, m++) {
@@ -318,7 +319,7 @@ export function createEduApp(store, opts) {
   /** plan：{ first, until }（隔週六排）或 { dates: [...] } */
   function makeSessions(c, plan) {
     const until = plan.until || (isDate(plan.first) ? addDays(plan.first, 364) : '');
-    const dates = Array.isArray(plan.dates) ? plan.dates.filter(isDate) : plan.every === 'month' ? monthly(plan.first, until) : biweekly(plan.first, until);
+    const dates = Array.isArray(plan.dates) ? plan.dates.filter(isDate) : plan.every === 'month' ? monthly(plan.first, until, Number(plan.nth), Number(plan.weekday)) : biweekly(plan.first, until);
     if (!dates.length) throw new AppError('BAD_REQUEST', '請選第一堂的日期');
     const have = new Set(sessionsOf(c.id).map((s) => s.date));
     if (have.size + dates.length > MAX_SESSIONS) throw new AppError('BAD_REQUEST', `一個班最多 ${MAX_SESSIONS} 堂`);
