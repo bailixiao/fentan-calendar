@@ -10,6 +10,7 @@ import { createSqlStore } from './store.js';
 export class CalendarStore extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
+    this.env = env;
     this.app = createStoreApp(createSqlStore(ctx.storage), {
       password: () => env.ADMIN_PASSWORD || '',
       setAlarm: (ms) => ctx.storage.setAlarm(ms)
@@ -21,8 +22,9 @@ export class CalendarStore extends DurableObject {
     return this.app.call(body);
   }
 
-  /** 每日提醒時間到了、或送下一批通知 */
+  /** 每日提醒時間到了、或送下一批通知。停用中（PAUSED）：什麼都不送，也不再排下一次 */
   alarm() {
+    if (this.env.PAUSED) return null;
     return this.app.alarm();
   }
 }
@@ -36,6 +38,12 @@ let front = null; // 同一個 Worker 執行個體重複使用（記憶體快取
 
 export default {
   fetch(request, env, ctx) {
+    // 2026-11-24 專案取消：停用（資料留著）。要恢復就把 wrangler.toml 的 PAUSED 拿掉再部署
+    if (env.PAUSED) {
+      return new Response(JSON.stringify({ ok: false, error: { code: 'PAUSED', message: '分壇教育組報名已停用' } }), {
+        status: 503, headers: { 'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*' }
+      });
+    }
     if (!front) front = createFront({ callStore: (body) => stub(env).call(body) });
     return front.handle(request, ctx);
   }

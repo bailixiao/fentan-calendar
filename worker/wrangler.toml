@@ -16,3 +16,7 @@ new_sqlite_classes = ["CalendarStore"]
 
 [observability]
 enabled = true
+
+# 2026-11-24 專案取消：停用（網址回「已停用」、每日提醒不再送）。程式碼和資料都留著，要恢復就刪掉這兩行再部署。
+[vars]
+PAUSED = "1"
